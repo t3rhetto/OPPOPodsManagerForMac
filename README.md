@@ -40,7 +40,7 @@ Built on the OPPO proprietary RFCOMM protocol reverse-engineered by [Leaf-lsgtky
 
 **Run directly:**
 
-Download `OppoPodsWPF.exe` from [Releases](https://github.com/Zhaoyi-ya/OPPO-Pods-For-Windows/releases) and double-click.
+Download `OPPO Pods For Windows.exe` from [Releases](https://github.com/Zhaoyi-ya/OPPO-Pods-For-Windows/releases) and double-click.
 
 **Build from source:**
 
@@ -130,7 +130,7 @@ Windows 桌面端 OPPO 耳机蓝牙控制器，支持 Enco Free4 / X3 / Air5 / A
 
 **直接运行：**
 
-下载 [Releases](https://github.com/Zhaoyi-ya/OPPO-Pods-For-Windows/releases) 中的 `OppoPodsWPF.exe`，双击运行。
+下载 [Releases](https://github.com/Zhaoyi-ya/OPPO-Pods-For-Windows/releases) 中的 `OPPO Pods For Windows.exe`，双击运行。
 
 **从源码编译：**
 
