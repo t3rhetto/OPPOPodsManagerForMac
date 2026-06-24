@@ -1,0 +1,22 @@
+## Build outputs
+bin/
+obj/
+publish/
+
+## IDE / VS
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+## OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+## Backup / Temp
+*_backup*/
+*.orig
+*.tmp
