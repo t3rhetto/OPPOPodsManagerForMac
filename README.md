@@ -6,7 +6,7 @@
 
 ## English
 
-Windows desktop OPPO earbuds Bluetooth controller, supporting Enco Free4 / X3 / Air4 Pro /Air5 / Air2 Pro series.
+Windows desktop OPPO earbuds Bluetooth controller, supporting Enco Free4 / X3 / Air5 / Air5 Pro / Air2 Pro series.
 
 > **Only OPPO Enco Free4 has been fully tested — all features work correctly.** Other models' adaptation logic is ported from open-source reference projects and has not been verified on real devices. Full functionality is not guaranteed.
 
@@ -18,7 +18,7 @@ Built on the OPPO proprietary RFCOMM protocol reverse-engineered by [Leaf-lsgtky
 - Wear detection (in-case / worn / removed)
 - ANC control (Off / Noise Cancelling / Adaptive / Transparency)
 - ANC sub-modes: Smart / Light / Medium / Deep
-- Spatial sound toggle (Free4 / Air5)
+- Spatial sound toggle (Free4 / Air5 / Air5 Pro)
 - Spatial audio 3-mode: Off / Fixed / Head Tracking (X3)
 - Game mode (Standard / Compatible)
 - Dual-device connection toggle
@@ -63,7 +63,7 @@ dotnet publish -c Release -r win-x64 -o publish
 | Enco Free4 | ✅ | ✅ | ✅ | —  | ✅ | 5 presets |
 | Enco X3    | ✅ | —  | —  | ✅ | ✅ | 5 presets |
 | Enco Air5  | ✅ | —  | ✅ | —  | —  | 5 presets |
-| Enco Air4 Pro | ✅ | —  | — | — | ✅ | 3 presets |
+| Enco Air5 Pro | ✅ | —  | ✅ | —  | ✅ | 5 presets |
 | Enco Air2 Pro | ✅ | —  | —  | —  | —  | 5 presets |
 
 Other Bluetooth devices whose name contains "OPPO" will auto-connect with a generic feature set.
@@ -97,7 +97,7 @@ GPL-3.0
 
 ## 中文
 
-Windows 桌面端 OPPO 耳机蓝牙控制器，支持 Enco Free4 / X3 / Air4 Pro / Air5 / Air2 Pro 系列。
+Windows 桌面端 OPPO 耳机蓝牙控制器，支持 Enco Free4 / X3 / Air5 / Air5 Pro / Air2 Pro 系列。
 
 > **当前仅完整测试过 OPPO Enco Free4，功能均正常。** 其他机型适配逻辑移植自开源参考项目，未做真机验证，不保证全部功能可用。
 
@@ -109,7 +109,7 @@ Windows 桌面端 OPPO 耳机蓝牙控制器，支持 Enco Free4 / X3 / Air4 Pro
 - 佩戴检测（入盒 / 佩戴 / 摘下）
 - 降噪控制（关闭 / 降噪 / 自适应 / 通透）
 - 降噪子模式：智能 / 轻度 / 中度 / 深度
-- 空间音效开关（Free4 / Air5）
+- 空间音效开关（Free4 / Air5 / Air5 Pro）
 - 空间音频三模式：关闭 / 固定 / 头部追踪（X3）
 - 游戏模式（标准 / 兼容两种实现）
 - 双设备连接开关
@@ -154,7 +154,7 @@ dotnet publish -c Release -r win-x64 -o publish
 | Enco Free4 | ✅ | ✅ | ✅ | — | ✅ | 5 种 |
 | Enco X3 | ✅ | — | — | ✅ | ✅ | 5 种 |
 | Enco Air5 | ✅ | — | ✅ | — | — | 5 种 |
-| Enco Air4 Pro | ✅ | —  | — | — | ✅ | 3 种 |
+| Enco Air5 Pro | ✅ | — | ✅ | — | ✅ | 5 种 |
 | Enco Air2 Pro | ✅ | — | — | — | — | 5 种 |
 
 其他名称包含 "OPPO" 的蓝牙设备可自动连接，使用通用功能集。

@@ -1,155 +1,214 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Text.Json;
 
 namespace OppoPodsWPF;
 
 /// <summary>
-/// 设备能力检测：根据蓝牙名称匹配型号，决定 UI 展示哪些功能开关
-/// 逻辑移植自 <see href="https://github.com/1812z/OppoPods"/> DeviceCapabilities.kt
+/// 设备能力检测。从 DeviceModels.json 加载 whitelist 配置，按蓝牙名称匹配设备。
+/// 支持能力、ANC 模式映射、EQ 名称均从 JSON 动态推导，添加新设备只需追加 whitelist 条目。
 /// </summary>
 public class DeviceCapabilities
 {
-    public string DeviceName { get; init; } = "";
+    public string DeviceName { get; set; } = "";
     public string ModelName { get; set; } = "Unknown";
+    public string ModelId { get; set; } = "";
 
-    // 功能标志
-    public bool HasSpatialAudio { get; init; }      // X3: cmd 0x0422 空间音频三模式(固定/追踪/关闭)
-    public bool HasSpatialSound { get; init; }       // Free4/Air5: feature 0x1B 空间音效开关
-    public bool HasDualDevice { get; init; }         // feature 0x11 双设备连接
-    public bool HasAdaptiveAnc { get; init; }        // Free4: 自适应降噪
-    public bool IsLegacyAnc { get; init; }           // Air2 Pro: ANC模式值交换(兼容)
-    public bool HasGameMode { get; init; } = true;   // 所有设备都支持游戏模式
+    // ========== 功能标志 ==========
+    public bool HasSpatialAudio { get; set; }      // cmd 0x0422 空间音频三模式（Off/Fixed/Track）
+    public bool HasSpatialSound { get; set; }       // feature 0x1B 空间音效开关
+    public bool HasDualDevice { get; set; }         // feature 0x11 双设备连接
+    public bool HasAdaptiveAnc { get; set; }        // ANC 子模式（Smart/Light/Medium/Deep）
+    public bool IsLegacyAnc { get; set; }           // noiseReductionMode 无子模式且 ANC On 在异常位置时启用值交换
+    public bool HasGameMode { get; set; } = true;   // 默认支持
 
-    // 各型号 EQ 预设不同
+    // ========== EQ 预设 ==========
     public Dictionary<string, byte> EqPresets { get; set; } = new();
     public Dictionary<byte, string> EqNames { get; set; } = new();
 
-    // ============================================================
-    // 硬编码型号表（移植自 1812z）
-    // ============================================================
-    private static readonly HashSet<string> AdaptiveAncModels = new() { "encofree4" };
-    private static readonly HashSet<string> SpatialAudioModels = new() { "encox3" };
-    private static readonly HashSet<string> SpatialSoundModels = new() { "encofree4", "encoair5" };
-    private static readonly HashSet<string> LegacyAncModels   = new() { "encoair2pro" };
-    private static readonly HashSet<string> DualDeviceModels  = new() { "encofree4", "encox3", "encoair4pro" };
+    /// <summary>从 noiseReductionMode 构建的 ANC 模式映射：响应字节 → 模式名</summary>
+    public Dictionary<(byte, byte), string> AncModeMap { get; set; } = new();
 
-    // X3 大师调音（5种，与欢律一致）
-    private static readonly Dictionary<string, byte> X3Eq = new()
+    // ========== 内嵌资源 ==========
+    private static readonly List<JsonElement> _deviceModels = LoadDeviceModels();
+    private static readonly Dictionary<string, string> _eqModeNames = LoadEqNameMap();
+
+    /// <summary>从嵌入资源加载设备 whitelist，按名称长度降序排列</summary>
+    private static List<JsonElement> LoadDeviceModels()
     {
-        ["至臻原音"] = 0,
-        ["高清解析"] = 1,
-        ["纯享人声"] = 2,
-        ["澎湃低音"] = 3,
-        ["丹拿特调"] = 7,
-    };
-
-    // Free4 大师调音（实测）
-    private static readonly Dictionary<string, byte> Free4Eq = new()
-    {
-        ["至臻原音"] = 0,
-        ["纯享人声"] = 1,
-        ["澎湃低音"] = 2,
-        ["丹拿特调"] = 3,
-        ["活力动感"] = 7,
-    };
-
-    // Air4 Pro 调音 (实测)
-    private static readonly Dictionary<string, byte> Air4ProEq = new()
-    {
-        ["纯粹原音"] = 0,
-        ["脉冲低音"] = 1,
-        ["悠扬人声"] = 2,
-    };
-
-    // ============================================================
-    // 检测入口
-    // ============================================================
-    public static DeviceCapabilities Detect(string? deviceName)
-    {
-        if (string.IsNullOrWhiteSpace(deviceName))
-            return Default();
-
-        var norm = Normalize(deviceName);
-        return DetectByNorm(norm, deviceName);
+        try
+        {
+            var asm = Assembly.GetExecutingAssembly();
+            using var stream = asm.GetManifestResourceStream("OppoPodsWPF.DeviceModels.json");
+            if (stream == null) return new List<JsonElement>();
+            using var reader = new StreamReader(stream);
+            var doc = JsonDocument.Parse(reader.ReadToEnd());
+            var list = doc.RootElement.EnumerateArray().ToList();
+            list.Sort((a, b) =>
+            {
+                var na = a.GetProperty("name").GetString() ?? "";
+                var nb = b.GetProperty("name").GetString() ?? "";
+                return nb.Length.CompareTo(na.Length);
+            });
+            return list;
+        }
+        catch { return new List<JsonElement>(); }
     }
 
-    /// <summary>手动覆盖型号（跳过名称检测）</summary>
-    public static DeviceCapabilities ForceModel(string modelName) =>
-        DetectByModelName(modelName);
-
-    private static DeviceCapabilities DetectByModelName(string modelName) => modelName switch
+    /// <summary>从嵌入资源加载 EQ modeType → 名称映射</summary>
+    private static Dictionary<string, string> LoadEqNameMap()
     {
-        "OPPO Enco Free4"    => DetectByNorm("encofree4", "OPPO Enco Free4"),
-        "OPPO Enco X3"       => DetectByNorm("encox3", "OPPO Enco X3"),
-        "OPPO Enco Air5"     => DetectByNorm("encoair5", "OPPO Enco Air5"),
-        "OPPO Enco Air2 Pro" => DetectByNorm("encoair2pro", "OPPO Enco Air2 Pro"),
-        "OPPO Enco Air4 Pro" => DetectByNorm("encoair4pro", "OPPO Enco Air4 Pro"),
-        _                    => Default()
-    };
+        try
+        {
+            var asm = Assembly.GetExecutingAssembly();
+            using var stream = asm.GetManifestResourceStream("OppoPodsWPF.EqModeNames.json");
+            if (stream == null) return new Dictionary<string, string>();
+            using var reader = new StreamReader(stream);
+            var doc = JsonDocument.Parse(reader.ReadToEnd());
+            var map = new Dictionary<string, string>();
+            foreach (var kv in doc.RootElement.GetProperty("mapping").EnumerateObject())
+                map[kv.Name] = kv.Value.GetString() ?? "";
+            return map;
+        }
+        catch { return new Dictionary<string, string>(); }
+    }
 
-    private static DeviceCapabilities DetectByNorm(string norm, string originalName)
+    /// <summary>根据蓝牙名称自动检测设备能力</summary>
+    public static DeviceCapabilities Detect(string? deviceName)
     {
-        var caps = new DeviceCapabilities
+        if (string.IsNullOrWhiteSpace(deviceName)) return Default();
+        var norm = Normalize(deviceName);
+        foreach (var entry in _deviceModels)
         {
-            DeviceName = originalName,
-            HasSpatialAudio  = MatchAny(norm, SpatialAudioModels),
-            HasSpatialSound  = MatchAny(norm, SpatialSoundModels),
-            HasDualDevice    = MatchAny(norm, DualDeviceModels),
-            HasAdaptiveAnc   = MatchAny(norm, AdaptiveAncModels),
-            IsLegacyAnc      = MatchAny(norm, LegacyAncModels),
-        };
+            var entryName = entry.GetProperty("name").GetString() ?? "";
+            if (Match(norm, Normalize(entryName)))
+                return FromJson(entry, deviceName);
+        }
+        return new DeviceCapabilities { DeviceName = deviceName, ModelName = deviceName };
+    }
 
-        // EQ 预设：X3 5种，Free4 4种，其他通用
-        if (Match(norm, "encox3"))
+    /// <summary>按完整型号名手动覆盖检测</summary>
+    public static DeviceCapabilities ForceModel(string modelName)
+    {
+        foreach (var entry in _deviceModels)
         {
-            caps.EqPresets = X3Eq;
-            caps.ModelName = "OPPO Enco X3";
+            var entryName = entry.GetProperty("name").GetString() ?? "";
+            if (string.Equals(modelName, entryName, StringComparison.OrdinalIgnoreCase))
+                return FromJson(entry, modelName);
         }
-        else if (Match(norm, "encofree4"))
+        return Default();
+    }
+
+    /// <summary>从 whitelist JSON 条目解析设备能力</summary>
+    private static DeviceCapabilities FromJson(JsonElement entry, string deviceName)
+    {
+        var name = entry.GetProperty("name").GetString() ?? deviceName;
+        var id = entry.GetProperty("id").GetString() ?? "";
+        var caps = new DeviceCapabilities { DeviceName = deviceName, ModelName = name, ModelId = id };
+
+        if (!entry.TryGetProperty("function", out var func)) return caps;
+
+        // spatialTypes 存在 → 空间音效；长度 ≥3 → 空间音频三模式
+        caps.HasSpatialSound = func.TryGetProperty("spatialTypes", out var st);
+        if (st.ValueKind == JsonValueKind.Array)
         {
-            caps.EqPresets = Free4Eq;
-            caps.ModelName = "OPPO Enco Free4";
-        }
-        else if (Match(norm, "encoair5"))
-        {
-            caps.EqPresets = Free4Eq;   // Air5 与 Free4 一致
-            caps.ModelName = "OPPO Enco Air5";
-        }
-        else if (Match(norm, "encoair4pro"))
-        {
-            caps.EqPresets = Air4ProEq;
-            caps.ModelName = "OPPO Enco Air4 Pro";
-        }
-        else if (Match(norm, "encoair2pro"))
-        {
-            caps.EqPresets = Free4Eq;
-            caps.ModelName = "OPPO Enco Air2 Pro";
-        }
-        else
-        {
-            caps.EqPresets = Free4Eq;   // 默认回退
-            caps.ModelName = originalName;
+            int n = 0;
+            foreach (var _ in st.EnumerateArray()) { n++; if (n >= 3) break; }
+            if (n >= 3) caps.HasSpatialAudio = true;
         }
 
-        // 反向索引
-        foreach (var (k, v) in caps.EqPresets)
-            caps.EqNames[v] = k;
+        // multiDevicesConnect ≥ 1 → 双设备连接
+        if (func.TryGetProperty("multiDevicesConnect", out var mdc))
+            caps.HasDualDevice = mdc.GetInt32() >= 1;
 
+        // noiseReductionMode 有 childrenMode → 自适应降噪子模式
+        if (func.TryGetProperty("noiseReductionMode", out var nrm))
+        {
+            foreach (var mode in nrm.EnumerateArray())
+                if (mode.TryGetProperty("childrenMode", out _))
+                    caps.HasAdaptiveAnc = true;
+
+            BuildAncMap(nrm, caps.AncModeMap);
+
+            // 无 childrenMode 且 modeType 5 在 protocolIndex 0 → 旧版 ANC 值交换
+            bool hasChildren = false;
+            foreach (var mode in nrm.EnumerateArray())
+                if (mode.TryGetProperty("childrenMode", out _)) hasChildren = true;
+            if (!hasChildren)
+            {
+                foreach (var mode in nrm.EnumerateArray())
+                    if (mode.TryGetProperty("modeType", out var lt) && lt.GetInt32() == 5 &&
+                        mode.TryGetProperty("protocolIndex", out var lp) && lp.GetInt32() == 0)
+                    { caps.IsLegacyAnc = true; break; }
+            }
+        }
+
+        // equalizerMode[].modeType → EqModeNames.json 查找显示名称
+        var eqMap = new Dictionary<byte, string>();
+        if (func.TryGetProperty("equalizerMode", out var eqModes))
+        {
+            foreach (var mode in eqModes.EnumerateArray())
+            {
+                if (!mode.TryGetProperty("protocolIndex", out var pi)) continue;
+                byte idx = pi.GetByte();
+                string displayName = idx < 10 ? $"模式{idx}" : $"M{idx}";
+                if (mode.TryGetProperty("modeType", out var mt))
+                    if (_eqModeNames.TryGetValue(mt.GetInt32().ToString(), out var n))
+                        displayName = n;
+                if (!eqMap.ContainsKey(idx)) eqMap[idx] = displayName;
+            }
+        }
+        if (eqMap.Count == 0) eqMap[0] = "默认";
+        ApplyEqNames(caps, eqMap);
         return caps;
     }
 
-    private static DeviceCapabilities Default() =>
-        new() { EqPresets = Free4Eq, ModelName = "Unknown" };
+    private static DeviceCapabilities Default() => new() { ModelName = "Unknown" };
 
-    // ============================================================
-    // 名称匹配工具
-    // ============================================================
+    /// <summary>写入 EQ preset 双向索引</summary>
+    private static void ApplyEqNames(DeviceCapabilities caps, Dictionary<byte, string> names)
+    {
+        caps.EqPresets = new Dictionary<string, byte>();
+        caps.EqNames = new Dictionary<byte, string>(names);
+        foreach (var (k, v) in names) caps.EqPresets[v] = k;
+    }
+
+    /// <summary>从 noiseReductionMode 构建 ANC 字节 → 模式名映射</summary>
+    private static void BuildAncMap(JsonElement nrm, Dictionary<(byte, byte), string> map)
+    {
+        var subNames = new[] { "Smart", "Light", "Medium", "Deep" };
+        foreach (var entry in nrm.EnumerateArray())
+        {
+            if (!entry.TryGetProperty("modeType", out var mt)) continue;
+            byte type = mt.GetByte();
+            if (!entry.TryGetProperty("childrenMode", out var children))
+            {
+                if (entry.TryGetProperty("protocolIndex", out var pi))
+                    map[(type, pi.GetByte())] = "Unknown";
+                continue;
+            }
+            int idx = 0;
+            foreach (var child in children.EnumerateArray())
+            {
+                if (!child.TryGetProperty("protocolIndex", out var pv)) continue;
+                byte value = pv.GetByte();
+                if (type == 1) map[(type, value)] = "Off";
+                else if (type == 2) map[(type, value)] = "Transparency";
+                else if (idx < subNames.Length) map[(type, value)] = subNames[idx];
+                else map[(type, value)] = $"Mode{value}";
+                idx++;
+            }
+        }
+    }
+
+    /// <summary>移除非字母数字字符并转小写，用于模糊匹配</summary>
     private static string Normalize(string name) =>
         new string(name.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
 
+    /// <summary>双向子串匹配（支持 A 包含 B 或 B 包含 A）</summary>
     private static bool Match(string normName, string normModel) =>
         normName.Contains(normModel) || normModel.Contains(normName);
-
-    private static bool MatchAny(string normName, HashSet<string> models) =>
-        models.Any(m => Match(normName, m));
 }

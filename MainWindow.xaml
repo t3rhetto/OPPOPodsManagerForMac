@@ -78,19 +78,91 @@
                                HorizontalAlignment="Center"/>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                         <Button x:Name="BtnSmart" Content="降噪" Tag="Smart" Click="AncMain_Click"
-                                Width="90" Height="28" Margin="0" BorderThickness="0" Padding="0"/>
+                                Width="90" Height="28" Margin="0" BorderThickness="0" Padding="0"
+                                Background="Transparent" FocusVisualStyle="{x:Null}">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="2">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
                         <Button x:Name="BtnAdaptive" Content="自适应" Tag="Adaptive" Click="AncMain_Click"
-                                Width="90" Height="28" Margin="0" BorderThickness="0" Padding="0"/>
+                                Width="90" Height="28" Margin="0" BorderThickness="0" Padding="0"
+                                Background="Transparent" FocusVisualStyle="{x:Null}">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="2">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
                         <Button x:Name="BtnTrans" Content="通透" Tag="Transparency" Click="AncMain_Click"
-                                Width="90" Height="28" Margin="0" BorderThickness="0" Padding="0"/>
+                                Width="90" Height="28" Margin="0" BorderThickness="0" Padding="0"
+                                Background="Transparent" FocusVisualStyle="{x:Null}">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="2">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
                         <Button x:Name="BtnOff" Content="关闭" Tag="Off" Click="AncMain_Click"
-                                Width="90" Height="28" Margin="0" BorderThickness="0" Padding="0"/>
+                                Width="90" Height="28" Margin="0" BorderThickness="0" Padding="0"
+                                Background="Transparent" FocusVisualStyle="{x:Null}">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="2">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
                     </StackPanel>
                     <StackPanel x:Name="AncSub" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,4,0,0" Visibility="Collapsed">
-                        <Button x:Name="BtnAncSmart" Content="智能" Tag="Smart" Width="72" Click="AncSub_Click" Margin="2"/>
-                        <Button x:Name="BtnAncLight" Content="轻度" Tag="Light" Width="72" Click="AncSub_Click" Margin="2"/>
-                        <Button x:Name="BtnAncMedium" Content="中度" Tag="Medium" Width="72" Click="AncSub_Click" Margin="2"/>
-                        <Button x:Name="BtnAncDeep" Content="深度" Tag="Deep" Width="72" Click="AncSub_Click" Margin="2"/>
+                        <Button x:Name="BtnAncSmart" Content="智能" Tag="Smart" Width="72" Click="AncSub_Click" Margin="2"
+                                Background="Transparent" FocusVisualStyle="{x:Null}">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="2">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                        <Button x:Name="BtnAncLight" Content="轻度" Tag="Light" Width="72" Click="AncSub_Click" Margin="2"
+                                Background="Transparent" FocusVisualStyle="{x:Null}">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="2">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                        <Button x:Name="BtnAncMedium" Content="中度" Tag="Medium" Width="72" Click="AncSub_Click" Margin="2"
+                                Background="Transparent" FocusVisualStyle="{x:Null}">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="2">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                        <Button x:Name="BtnAncDeep" Content="深度" Tag="Deep" Width="72" Click="AncSub_Click" Margin="2"
+                                Background="Transparent" FocusVisualStyle="{x:Null}">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="2">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -129,9 +201,10 @@
                                   Checked="CbSpatial_Changed" Unchecked="CbSpatial_Changed" Visibility="Collapsed"/>
                         <CheckBox x:Name="CbGame" Content="游戏模式" Margin="4" HorizontalAlignment="Center"
                                   Checked="CbGame_Changed" Unchecked="CbGame_Changed"/>
-                        <CheckBox x:Name="CbDualDevice" Content="双设备连接" Margin="4" HorizontalAlignment="Center"
-                                  Checked="CbDualDevice_Changed" Unchecked="CbDualDevice_Changed" Visibility="Collapsed"/>
                     </UniformGrid>
+                    <CheckBox x:Name="CbDualDevice" Content="双设备连接" Margin="4" HorizontalAlignment="Center"
+                              Checked="CbDualDevice_Changed" Unchecked="CbDualDevice_Changed" Visibility="Collapsed"/>
+
                     <TextBlock Text="大师调音" FontSize="12" Margin="0,6,0,2" HorizontalAlignment="Center"/>
                     <ComboBox x:Name="CbEq" SelectionChanged="CbEq_SelectionChanged" Height="30" Padding="8,0" Margin="0,0,0,6"/>
                 </StackPanel>
@@ -169,19 +242,13 @@
                     <TextBlock Text="设置" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,12"
                                HorizontalAlignment="Center"/>
 
-                    <TextBlock Text="设备型号" FontSize="12" Margin="0,0,0,2" HorizontalAlignment="Center"/>
-                    <ComboBox x:Name="CbModel" SelectionChanged="CbModel_Changed" Height="30" Padding="8,0" Margin="0,0,0,12"/>
-                    <TextBlock x:Name="ModelNote" Text="" FontSize="10" HorizontalAlignment="Center" Opacity="0.5" Margin="0,-8,0,8"/>
+                    <TextBlock x:Name="ModelNote" Text="" FontSize="10" HorizontalAlignment="Center" Opacity="0.5" Margin="0,0,0,8"/>
 
                     <TextBlock Text="自定义设备名称" FontSize="12" Margin="0,0,0,2" HorizontalAlignment="Center"/>
                     <TextBox x:Name="TbCustomName" TextChanged="TbCustomName_Changed" Height="30" Padding="8,4" Margin="0,0,0,12"
                              HorizontalContentAlignment="Center"/>
 
-                    <TextBlock Text="游戏模式实现" FontSize="12" Margin="0,0,0,2" HorizontalAlignment="Center"/>
-                    <ComboBox x:Name="CbGameMode" SelectionChanged="CbGameMode_Changed" Height="30" Padding="8,0" Margin="0,0,0,12">
-                        <ComboBoxItem Content="标准 (28)"/>
-                        <ComboBoxItem Content="兼容 (28+06)"/>
-                    </ComboBox>
+                    <!-- 游戏模式默认兼容 -->
 
                     <TextBlock Text="主题" FontSize="12" Margin="0,0,0,2" HorizontalAlignment="Center"/>
                     <ComboBox x:Name="CbTheme" SelectionChanged="CbTheme_Changed" Height="30" Padding="8,0" Margin="0,0,0,12">

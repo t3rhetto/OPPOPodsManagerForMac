@@ -1,0 +1,964 @@
+[
+  {
+    "rssi": {
+      "rightOffset": 0,
+      "leftOffset": 0,
+      "secondRssi": 54,
+      "firstRssi": 54,
+      "flattenOffset": 2
+    },
+    "minVersion": 16006002,
+    "children": [
+      {
+        "name": "OPPO Enco ohm DO"
+      },
+      {
+        "name": "OPPO Enco ohm EX"
+      },
+      {
+        "name": "OPPO Enco ohm"
+      }
+    ],
+    "function": {
+      "strongNoiseReductionRealTime": 1,
+      "fitDetection": 1,
+      "dolbyAtmos": 1,
+      "meetingAssistant": 1,
+      "whiteNoise": 1,
+      "noiseReductionMode": [
+        {
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "modeType": 7,
+              "protocolIndex": 7
+            },
+            {
+              "modeType": 4,
+              "protocolIndex": 4
+            },
+            {
+              "modeType": 8,
+              "protocolIndex": 5
+            },
+            {
+              "modeType": 3,
+              "protocolIndex": 6
+            }
+          ],
+          "protocolIndex": 1
+        },
+        {
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "modeType": 1,
+              "protocolIndex": 3
+            }
+          ],
+          "protocolIndex": 0
+        },
+        {
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "modeType": 2,
+              "protocolIndex": 8
+            }
+          ],
+          "protocolIndex": 2
+        }
+      ],
+      "customEqUiVersion": 2,
+      "newFunctionGuide": 0,
+      "customDress": 1,
+      "hearingEnhancement": 1,
+      "collectLogs": 1,
+      "callControl": [
+        {
+          "ear": 2,
+          "action": 29,
+          "support": 524800,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 31,
+          "support": 262656,
+          "showEar": 0
+        }
+      ],
+      "batteryInfo": 1,
+      "feedback": 1,
+      "related": 1,
+      "equalizer": 4,
+      "longPressType": 8833,
+      "multiDevicesConnect": 2,
+      "customEqualizer": 1,
+      "diagnostic": 1,
+      "clickTakePic": 1,
+      "cleanGuide": 1,
+      "multiConnectFunctions": [
+        {
+          "minFirmVersion": 0,
+          "functionType": "displayPairedDevice"
+        },
+        {
+          "minFirmVersion": 0,
+          "functionType": "connectDisconnectDevice"
+        },
+        {
+          "minFirmVersion": 0,
+          "functionType": "unpairDevice"
+        }
+      ],
+      "swiftPair": 1,
+      "spatialDescriptionType": 2,
+      "autoFirmwareUpdate": 1,
+      "control": [
+        {
+          "ear": 2,
+          "action": 1,
+          "support": 516,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 2,
+          "support": 8807,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 3,
+          "support": 1057379,
+          "showEar": 0
+        },
+        {
+          "entryStrModify": [
+            {
+              "categoryVersion": 2
+            }
+          ],
+          "ear": 2,
+          "action": 6,
+          "support": 536,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 11,
+          "showEar": 0
+        }
+      ],
+      "customEqFrequency": [
+        31,
+        62,
+        125,
+        250,
+        500,
+        1000,
+        2000,
+        4000,
+        8000,
+        16000
+      ],
+      "gameSoundMutexes": [
+        1
+      ],
+      "promptVolume": 1,
+      "autoBTBond": 1,
+      "wearDetection": 1,
+      "autoSwitchLink": 1,
+      "fastDiscovery": 1,
+      "spatialTypes": [
+        0,
+        1
+      ],
+      "equalizerMode": [
+        {
+          "modeType": 26,
+          "protocolIndex": 0
+        },
+        {
+          "modeType": 28,
+          "protocolIndex": 1
+        },
+        {
+          "modeType": 29,
+          "protocolIndex": 2
+        }
+      ],
+      "earScan": 1,
+      "findDevice": 1,
+      "firmwareFileCheckFlags": 7,
+      "aiTranslate": 1,
+      "gameSoundList": [
+        {
+          "type": 3
+        },
+        {
+          "type": 0
+        }
+      ],
+      "introductionGuideList": [
+        2,
+        1,
+        3,
+        9,
+        6,
+        7,
+        5
+      ]
+    },
+    "name": "OPPO Enco Air5",
+    "id": "06D810",
+    "type": "T1",
+    "supportSpp": true,
+    "brand": "oppo",
+    "uuid": "0000079A-D102-11E1-9B23-00025B00A5A5"
+  },
+  {
+    "rssi": {
+      "rightOffset": 0,
+      "leftOffset": 0,
+      "secondRssi": 57,
+      "firstRssi": 54,
+      "flattenOffset": 2
+    },
+    "minVersion": 16003000,
+    "children": [
+      {
+        "name": "OPPO Enco Einstein 1"
+      },
+      {
+        "name": "OPPO Enco Einstein 3"
+      }
+    ],
+    "function": {
+      "highToneQuality": 1,
+      "whiteNoise": 1,
+      "meetingAssistant": 1,
+      "noiseReductionMode": [
+        {
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "modeType": 7,
+              "protocolIndex": 7
+            },
+            {
+              "modeType": 4,
+              "protocolIndex": 4
+            },
+            {
+              "modeType": 8,
+              "protocolIndex": 5
+            },
+            {
+              "modeType": 3,
+              "protocolIndex": 6
+            }
+          ],
+          "protocolIndex": 1
+        },
+        {
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "modeType": 1,
+              "protocolIndex": 3
+            }
+          ],
+          "protocolIndex": 0
+        },
+        {
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "modeType": 2,
+              "protocolIndex": 8
+            }
+          ],
+          "protocolIndex": 2
+        }
+      ],
+      "customEqUiVersion": 2,
+      "collectLogs": 1,
+      "callControl": [
+        {
+          "ear": 2,
+          "action": 29,
+          "support": 524800,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 31,
+          "support": 262656,
+          "showEar": 0
+        }
+      ],
+      "promptVolumeRange": {
+        "min": 2,
+        "max": 10
+      },
+      "feedback": 1,
+      "equalizer": 4,
+      "diagnostic": 1,
+      "cleanGuide": 1,
+      "multiConnectFunctions": [
+        {
+          "minFirmVersion": 0,
+          "functionType": "displayPairedDevice"
+        },
+        {
+          "minFirmVersion": 0,
+          "functionType": "connectDisconnectDevice"
+        },
+        {
+          "minFirmVersion": 0,
+          "functionType": "unpairDevice"
+        },
+        {
+          "minFirmVersion": 0,
+          "functionType": "setPriorityDevice"
+        }
+      ],
+      "functionIntroductionGuide": 1,
+      "spatialDescriptionType": 2,
+      "upgradeMtu": 1,
+      "spatialHiResMutex": 1,
+      "voiceWake": 3,
+      "controlGuideSupport": 1,
+      "spatialTypes": [
+        0,
+        1
+      ],
+      "equalizerMode": [
+        {
+          "modeType": 26,
+          "protocolIndex": 0
+        },
+        {
+          "modeType": 28,
+          "protocolIndex": 2
+        },
+        {
+          "modeType": 29,
+          "protocolIndex": 1
+        }
+      ],
+      "findDevice": 1,
+      "earScan": 1,
+      "gameSoundList": [
+        {
+          "type": 3
+        },
+        {
+          "type": 0
+        }
+      ],
+      "bassEngineSupport": 1,
+      "strongNoiseReductionRealTime": 1,
+      "fitDetection": 1,
+      "dolbyAtmos": 1,
+      "customDress": 1,
+      "hearingEnhancement": 1,
+      "batteryInfo": 1,
+      "firmwareTrack": 1,
+      "related": 1,
+      "longPressType": 8833,
+      "multiDevicesConnect": 2,
+      "customEqualizer": 1,
+      "clickTakePic": 1,
+      "swiftPair": 1,
+      "autoFirmwareUpdate": 1,
+      "control": [
+        {
+          "ear": 2,
+          "action": 1,
+          "support": 516,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 2,
+          "support": 8807,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 3,
+          "support": 3154531,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 5,
+          "support": 3584,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 11,
+          "showEar": 0
+        }
+      ],
+      "customEqFrequency": [
+        31,
+        62,
+        125,
+        250,
+        500,
+        1000,
+        2000,
+        4000,
+        8000,
+        16000
+      ],
+      "gameSoundMutexes": [
+        1,
+        2
+      ],
+      "promptVolume": 1,
+      "autoBTBond": 1,
+      "wearDetection": 1,
+      "autoSwitchLink": 1,
+      "fastDiscovery": 1,
+      "firmwareFileCheckFlags": 7,
+      "aiTranslate": 1,
+      "introductionGuideList": [
+        2,
+        1,
+        3,
+        9,
+        7,
+        5
+      ]
+    },
+    "name": "OPPO Enco Air5 Pro",
+    "id": "06C410",
+    "type": "T1",
+    "supportSpp": true,
+    "brand": "oppo",
+    "uuid": "0000079A-D102-11E1-9B23-00025B00A5A5"
+  },
+  {
+    "rssi": {
+      "rightOffset": 0,
+      "leftOffset": 0,
+      "secondRssi": 58,
+      "firstRssi": 53,
+      "flattenOffset": 2
+    },
+    "minVersion": 4001230,
+    "function": {
+      "dolbyAtmos": 1,
+      "autoFirmwareUpdate": 1,
+      "noiseReductionMode": [
+        {
+          "modeType": 5,
+          "protocolIndex": 0
+        },
+        {
+          "modeType": 1,
+          "protocolIndex": 1
+        },
+        {
+          "modeType": 2,
+          "protocolIndex": 2
+        },
+        {
+          "modeType": 6,
+          "decideByEarDevice": true,
+          "protocolIndex": 3
+        }
+      ],
+      "customDress": 1,
+      "control": [
+        {
+          "ear": 2,
+          "action": 1,
+          "support": 516,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 2,
+          "support": 33380,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 3,
+          "support": 41475,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 6,
+          "support": 4632,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 11,
+          "showEar": 1
+        }
+      ],
+      "batteryInfo": 1,
+      "wearDetection": 1,
+      "functionGuide": 1,
+      "fastDiscovery": 1,
+      "related": 1,
+      "equalizer": 2,
+      "controlGuideSupport": 1,
+      "equalizerMode": [
+        {
+          "modeType": 1,
+          "protocolIndex": 0
+        },
+        {
+          "modeType": 2,
+          "protocolIndex": 1
+        },
+        {
+          "modeType": 3,
+          "protocolIndex": 2
+        }
+      ],
+      "findDevice": 1,
+      "diagnostic": 1,
+      "clickTakePic": 1
+    },
+    "name": "OPPO Enco Air2 Pro",
+    "id": "063810",
+    "type": "T2",
+    "supportSpp": true,
+    "podsVersion": 3007230,
+    "brand": "oppo",
+    "uuid": "0000079A-D102-11E1-9B23-00025B00A5A5"
+  },
+  {
+    "rssi": {
+      "rightOffset": 0,
+      "leftOffset": 0,
+      "secondRssi": 50,
+      "firstRssi": 47,
+      "flattenOffset": 2
+    },
+    "minVersion": 14008000,
+    "function": {
+      "spineHealth": 1,
+      "strongNoiseReductionRealTime": 1,
+      "fitDetection": 1,
+      "headSetSoundRecord": 1,
+      "highToneQuality": 1,
+      "dolbyAtmos": 1,
+      "noiseReductionMode": [
+        {
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "modeType": 7,
+              "protocolIndex": 7
+            },
+            {
+              "modeType": 4,
+              "protocolIndex": 4
+            },
+            {
+              "modeType": 8,
+              "protocolIndex": 5
+            },
+            {
+              "modeType": 3,
+              "protocolIndex": 6
+            }
+          ],
+          "protocolIndex": 1
+        },
+        {
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "modeType": 1,
+              "protocolIndex": 3
+            }
+          ],
+          "protocolIndex": 0
+        },
+        {
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "modeType": 2,
+              "protocolIndex": 8
+            },
+            {
+              "modeType": 6,
+              "protocolIndex": 9
+            }
+          ],
+          "protocolIndex": 2
+        }
+      ],
+      "customDress": 1,
+      "hearingEnhancement": 1,
+      "callControl": [
+        {
+          "ear": 2,
+          "action": 32,
+          "support": 524800,
+          "showEar": 0,
+          "defaultFunction": 524288
+        },
+        {
+          "ear": 2,
+          "action": 33,
+          "support": 262656,
+          "showEar": 0,
+          "defaultFunction": 262144
+        },
+        {
+          "ear": 2,
+          "action": 34,
+          "support": 131584,
+          "showEar": 0
+        }
+      ],
+      "batteryInfo": 1,
+      "feedback": 1,
+      "immersiveRecord": 0,
+      "related": 1,
+      "equalizer": 4,
+      "aiSummary": 1,
+      "multiDevicesConnect": 1,
+      "hearingJudgeDb": 1,
+      "diagnostic": 1,
+      "customEqualizer": 1,
+      "clickTakePic": 1,
+      "cleanGuide": 1,
+      "zenMode": 2,
+      "spatialDescriptionType": 1,
+      "autoFirmwareUpdate": 1,
+      "control": [
+        {
+          "ear": 2,
+          "action": 16,
+          "support": 516,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 17,
+          "support": 8807,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 18,
+          "support": 3220067,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 5,
+          "support": 3584,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 20,
+          "showEar": 1
+        }
+      ],
+      "gameSoundMutexes": [
+        1
+      ],
+      "spatialHiResMutex": 1,
+      "spatialVip": 1,
+      "dialogTags": [
+        1
+      ],
+      "wearDetection": 1,
+      "supportPinch": 1,
+      "autoSwitchLink": 1,
+      "fastDiscovery": 1,
+      "controlAutoVolumeSupport": 1,
+      "controlGuideSupport": 1,
+      "spatialTypes": [
+        0,
+        1,
+        2
+      ],
+      "leFilterFunctions": [
+        {
+          "minFirmVersion": 25,
+          "minAppVersion": 14007000,
+          "functionType": "goldHearing",
+          "needConnectSpp": false
+        },
+        {
+          "minFirmVersion": 25,
+          "minAppVersion": 14007000,
+          "functionType": "personalTone",
+          "needConnectSpp": true
+        },
+        {
+          "minFirmVersion": 25,
+          "minAppVersion": 14007000,
+          "functionType": "fitDetection",
+          "needConnectSpp": false
+        },
+        {
+          "minFirmVersion": 25,
+          "minAppVersion": 14007000,
+          "functionType": "firmwareUpdate",
+          "needConnectSpp": true
+        },
+        {
+          "minFirmVersion": 25,
+          "minAppVersion": 14007000,
+          "functionType": "collectLogs",
+          "needConnectSpp": true
+        }
+      ],
+      "equalizerMode": [
+        {
+          "modeType": 26,
+          "summaryId": 1,
+          "tag": 3,
+          "protocolIndex": 0
+        },
+        {
+          "modeType": 27,
+          "summaryId": 2,
+          "tag": 3,
+          "protocolIndex": 1
+        },
+        {
+          "modeType": 28,
+          "summaryId": 3,
+          "tag": 3,
+          "protocolIndex": 2
+        },
+        {
+          "modeType": 29,
+          "summaryId": 4,
+          "tag": 3,
+          "protocolIndex": 3
+        },
+        {
+          "modeType": 30,
+          "summaryId": 5,
+          "tag": 3,
+          "protocolIndex": 7
+        }
+      ],
+      "findDevice": 1,
+      "earScan": 1,
+      "tutorialGuide": 1,
+      "aiTranslate": 1,
+      "gameSoundList": [
+        {
+          "type": 3
+        },
+        {
+          "type": 0
+        }
+      ]
+    },
+    "name": "OPPO Enco X3",
+    "id": "067410",
+    "type": "T1",
+    "supportSpp": true,
+    "brand": "oppo",
+    "uuid": "0000079A-D102-11E1-9B23-00025B00A5A5"
+  },
+  {
+    "rssi": {
+      "rightOffset": 0,
+      "leftOffset": 0,
+      "secondRssi": 44,
+      "firstRssi": 44,
+      "flattenOffset": 2
+    },
+    "minVersion": 15003002,
+    "function": {
+      "strongNoiseReductionRealTime": 1,
+      "noiseReductionUIVersion": 2,
+      "fitDetection": 1,
+      "headSetSoundRecord": 0,
+      "highToneQuality": 1,
+      "dolbyAtmos": 1,
+      "noiseReductionMode": [
+        {
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "modeType": 4,
+              "protocolIndex": 4
+            },
+            {
+              "modeType": 8,
+              "protocolIndex": 5
+            },
+            {
+              "modeType": 3,
+              "protocolIndex": 6
+            },
+            {
+              "modeType": 7,
+              "protocolIndex": 7
+            }
+          ],
+          "protocolIndex": 1
+        },
+        {
+          "modeType": 10,
+          "protocolIndex": 11
+        },
+        {
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "modeType": 2,
+              "protocolIndex": 8
+            }
+          ],
+          "protocolIndex": 2
+        },
+        {
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "modeType": 1,
+              "protocolIndex": 3
+            }
+          ],
+          "protocolIndex": 0
+        }
+      ],
+      "customDress": 1,
+      "hearingEnhancement": 1,
+      "callControl": [
+        {
+          "ear": 2,
+          "action": 29,
+          "support": 524800,
+          "showEar": 0,
+          "defaultFunction": 524288
+        },
+        {
+          "ear": 2,
+          "action": 30,
+          "support": 131584,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 31,
+          "support": 262656,
+          "showEar": 0,
+          "defaultFunction": 262144
+        }
+      ],
+      "batteryInfo": 1,
+      "feedback": 1,
+      "functionGuide": 0,
+      "related": 1,
+      "equalizer": 4,
+      "aiSummary": 1,
+      "multiDevicesConnect": 1,
+      "hearingJudgeDb": 1,
+      "diagnostic": 1,
+      "customEqualizer": 1,
+      "clickTakePic": 1,
+      "cleanGuide": 1,
+      "spatialDescriptionType": 2,
+      "functionIntroductionGuide": 1,
+      "autoFirmwareUpdate": 1,
+      "equalizerModeCompat": [
+        {
+          "modeType": 34,
+          "minFirmVersion": 118,
+          "tag": 0,
+          "protocolIndex": 7,
+          "order": 4
+        }
+      ],
+      "control": [
+        {
+          "ear": 2,
+          "action": 1,
+          "support": 516,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 2,
+          "support": 8807,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 3,
+          "support": 3154531,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "minSelectCount": 1,
+          "action": 27,
+          "showEar": 0
+        },
+        {
+          "ear": 2,
+          "action": 5,
+          "support": 3584,
+          "showEar": 0
+        }
+      ],
+      "spatialHiResMutex": 1,
+      "promptVolume": 1,
+      "spatialVip": 1,
+      "dialogTags": [
+        2
+      ],
+      "wearDetection": 1,
+      "autoSwitchLink": 1,
+      "fastDiscovery": 1,
+      "controlAutoVolumeSupport": 1,
+      "controlGuideSupport": 1,
+      "spatialTypes": [
+        0,
+        1
+      ],
+      "equalizerMode": [
+        {
+          "modeType": 26,
+          "protocolIndex": 0
+        },
+        {
+          "modeType": 28,
+          "protocolIndex": 1
+        },
+        {
+          "modeType": 29,
+          "protocolIndex": 2
+        }
+      ],
+      "findDevice": 1,
+      "earScan": 1,
+      "aiTranslate": 1
+    },
+    "name": "OPPO Enco Free4",
+    "id": "068C10",
+    "type": "T1",
+    "supportSpp": true,
+    "brand": "oppo",
+    "uuid": "0000079A-D102-11E1-9B23-00025B00A5A5"
+  }
+]

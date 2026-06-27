@@ -85,7 +85,7 @@ public class RfcommService : IDisposable
                     return;
                 }
 
-                Caps = DeviceCapabilities.Detect(name);
+                Caps = DeviceCapabilities.Detect(name ?? $"耳机 ({addr:X12})");
 
                 _socket = socket(AF_BTH, SOCK_STREAM, BTHPROTO_RFCOMM);
                 if (_socket == IntPtr.Zero)
@@ -94,30 +94,27 @@ public class RfcommService : IDisposable
                     return;
                 }
 
-                var sa = new SockAddrBth
-                {
-                    family = AF_BTH,
-                    btAddr = addr,
-                    port = 15
-                };
-                int saSize = Marshal.SizeOf(sa);
-                var saPtr = Marshal.AllocHGlobal(saSize);
-                Marshal.StructureToPtr(sa, saPtr, false);
+                // 尝试多种方式连接，按优先级排列
+                if (TryConnect(addr, OppoProtocol.OppoSppUuid, 0))   // 方式1：UUID + SDP 自动解析
+                    goto connected;
+                if (TryConnect(addr, OppoProtocol.OppoSppUuid, 15))  // 方式2：UUID + 默认端口 15
+                    goto connected;
+                if (TryConnect(addr, Guid.Empty, 15))                 // 方式3：空 UUID + 默认端口 15
+                    goto connected;
+                if (TryConnect(addr, Guid.Empty, 1))                  // 方式4：尝试端口 1
+                    goto connected;
 
-                if (connect(_socket, saPtr, saSize) != 0)
-                {
-                    Marshal.FreeHGlobal(saPtr);
-                    closesocket(_socket);
-                    _socket = IntPtr.Zero;
-                    LastError = "无法连接耳机";
-                    return;
-                }
-                Marshal.FreeHGlobal(saPtr);
+                // 都失败
+                closesocket(_socket);
+                _socket = IntPtr.Zero;
+                LastError = "无法连接耳机（已尝试 4 种连接方式）";
+                return;
 
+            connected:
                 State.Connected = true;
                 LastError = null;
 
-                // 五连发 + 一次长读：先快速发完所有查询，等 500ms 后一口气读回全部响应
+                // 五连发 + 一次长读
                 Send(OppoProtocol.PktBatchQuery);
                 Thread.Sleep(80);
                 Send(OppoProtocol.PktBattery);
@@ -137,6 +134,26 @@ public class RfcommService : IDisposable
         });
     }
 
+    /// <summary>尝试通过指定参数建立 BTH RFCOMM 连接</summary>
+    private bool TryConnect(ulong btAddr, Guid serviceUuid, uint port)
+    {
+        var sa = new SockAddrBth
+        {
+            family = AF_BTH,
+            btAddr = btAddr,
+            serviceClassId = serviceUuid,
+            port = port
+        };
+        int saSize = Marshal.SizeOf(sa);
+        var saPtr = Marshal.AllocHGlobal(saSize);
+        Marshal.StructureToPtr(sa, saPtr, false);
+
+        int result = connect(_socket, saPtr, saSize);
+        Marshal.FreeHGlobal(saPtr);
+
+        return result == 0;
+    }
+
     private (ulong addr, string? name) ReadBtDevice()
     {
         try
@@ -145,49 +162,34 @@ public class RfcommService : IDisposable
                 @"SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters\Devices");
             if (key == null) return (0, null);
 
+            // 第一轮：按名称匹配 "OPPO"
             foreach (var subName in key.GetSubKeyNames())
             {
                 if (subName.Length != 12 || !ulong.TryParse(subName,
                     System.Globalization.NumberStyles.HexNumber, null, out var addr))
                     continue;
 
-                // 尝试从蓝牙枚举注册表读设备名
-                string? name = null;
-                try
-                {
-                    using var devKey = key.OpenSubKey(subName);
-                    if (devKey != null)
-                    {
-                        // 注册表 Name 值可能是 byte[] (ASCII) 或 string
-                        var raw = devKey.GetValue("Name");
-                        name = raw switch
-                        {
-                            byte[] bytes => System.Text.Encoding.ASCII.GetString(bytes).TrimEnd('\0'),
-                            string s => s,
-                            _ => null
-                        };
+                string? name = ReadBtDeviceName(key, subName);
 
-                        // 也试 FriendlyName
-                        if (string.IsNullOrEmpty(name))
-                        {
-                            var fn = devKey.GetValue("FriendlyName");
-                            name = fn switch
-                            {
-                                string s => s,
-                                byte[] bytes => System.Text.Encoding.ASCII.GetString(bytes).TrimEnd('\0'),
-                                _ => null
-                            };
-                        }
-                    }
-                }
-                catch { }
-
-                // OPPO 设备优先匹配
                 if (!string.IsNullOrEmpty(name) && name.Contains("OPPO", StringComparison.OrdinalIgnoreCase))
                     return (addr, name);
             }
 
-            // 回退：没找到 OPPO 名称的，返回第一个 BT 地址（兼容所有设备）
+            // 第二轮：按服务 UUID 匹配（即使名称不含 "OPPO" 也能找到）
+            foreach (var subName in key.GetSubKeyNames())
+            {
+                if (subName.Length != 12 || !ulong.TryParse(subName,
+                    System.Globalization.NumberStyles.HexNumber, null, out var addr))
+                    continue;
+
+                if (HasOppoSppService(key, subName))
+                {
+                    var name = ReadBtDeviceName(key, subName);
+                    return (addr, name);
+                }
+            }
+
+            // 回退：没找到 OPPO 名称或 UUID 的，返回第一个 BT 地址
             foreach (var subName in key.GetSubKeyNames())
             {
                 if (subName.Length == 12 && ulong.TryParse(subName,
@@ -197,6 +199,63 @@ public class RfcommService : IDisposable
         }
         catch { }
         return (0, null);
+    }
+
+    /// <summary>从注册表读取蓝牙设备名称</summary>
+    private static string? ReadBtDeviceName(RegistryKey devicesKey, string subKeyName)
+    {
+        try
+        {
+            using var devKey = devicesKey.OpenSubKey(subKeyName);
+            if (devKey == null) return null;
+
+            var raw = devKey.GetValue("Name");
+            var name = raw switch
+            {
+                byte[] bytes => System.Text.Encoding.ASCII.GetString(bytes).TrimEnd('\0'),
+                string s => s,
+                _ => null
+            };
+
+            if (string.IsNullOrEmpty(name))
+            {
+                var fn = devKey.GetValue("FriendlyName");
+                name = fn switch
+                {
+                    string s => s,
+                    byte[] bytes => System.Text.Encoding.ASCII.GetString(bytes).TrimEnd('\0'),
+                    _ => null
+                };
+            }
+
+            return name;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>检查注册表中是否有 OPPO SPP 服务的 SDP 记录</summary>
+    private static bool HasOppoSppService(RegistryKey devicesKey, string subKeyName)
+    {
+        try
+        {
+            // Windows 存储 SDP 记录的路径
+            using var sdpKey = Registry.LocalMachine.OpenSubKey(
+                $@"SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters\Services\{subKeyName}");
+            if (sdpKey == null) return false;
+
+            // OPPO SPP UUID: 0000079A-D102-11E1-9B23-00025B00A5A5
+            // 注册表中服务子键名称为 UUID 去横线大写: 0000079AD10211E19B2300025B00A5A5
+            foreach (var serviceName in sdpKey.GetSubKeyNames())
+            {
+                if (serviceName.Contains("0000079A", StringComparison.OrdinalIgnoreCase))
+                    return true;
+                if (serviceName.Contains("000079A", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+        catch { return false; }
     }
 
     private void ReadResponses(int timeoutMs)
@@ -289,7 +348,7 @@ public class RfcommService : IDisposable
                 byte v1 = pkt[start + i + 2], v2 = pkt[start + i + 3];
             if (OppoProtocol.AncValues.TryGetValue((v1, v2), out var mode))
             {
-                // Air2 Pro 旧版 ANC 反向交换（解析时换回来）
+                // 旧版 ANC 值交换（解析时换回来）
                 State.AncMode = Caps.IsLegacyAnc ? OppoProtocol.LegacyAncSwap(mode) : mode;
             }
             }
@@ -341,7 +400,6 @@ public class RfcommService : IDisposable
 
     private void ParseBatchStatus(byte[] pkt, int start, int len)
     {
-        // 0x810D 解析游戏模式、双设备、空间音效状态
         for (int i = 0; i + 1 < len; i += 2)
         {
             byte feature = pkt[start + i];
@@ -358,7 +416,7 @@ public class RfcommService : IDisposable
 
     public void SendAnc(string mode)
     {
-        // Air2 Pro 旧版 ANC 值交换
+        // 旧版 ANC 值交换
         if (Caps.IsLegacyAnc)
             mode = OppoProtocol.LegacyAncSwap(mode);
         Send(OppoProtocol.PktAncMode(mode));
@@ -367,12 +425,9 @@ public class RfcommService : IDisposable
     public void SendSpatial(bool on) => Send(OppoProtocol.BuildFeaturePacket(OppoProtocol.FeatureSpatial, on));
     public void SendSpatialAudio(string mode) => Send(OppoProtocol.PktSpatialAudio(mode));
     public void SendDualDevice(bool on) => Send(OppoProtocol.BuildFeaturePacket(OppoProtocol.FeatureDualDevice, on));
-    public void SendGameMode(bool on, bool compatible = false)
+    public void SendGameMode(bool on)
     {
-        // 标准: 只发 28; 兼容: 发 28 + 06 (顺序执行, 无阻塞延迟)
         Send(OppoProtocol.BuildFeaturePacket(OppoProtocol.FeatureGameMain, on));
-        if (compatible)
-            Send(OppoProtocol.BuildFeaturePacket(OppoProtocol.FeatureGameLL, on));
     }
     public void SendEq(string name)
     {

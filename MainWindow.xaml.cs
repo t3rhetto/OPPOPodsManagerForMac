@@ -47,8 +47,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private readonly Forms.NotifyIcon _trayIcon = new();
     private System.Drawing.Icon _iconConnected, _iconDisconnected;
     private bool _realClose;
-    private string? _modelOverride;   // null=自动检测, 非null=强制型号
-    private bool _gameModeCompat;     // 游戏模式兼容实现
+    // private string? _modelOverride;
+    // private bool _gameModeCompat;
     private bool _wasConnected;        // 追踪连接状态，首次连上时弹提示
     private bool _lowBatteryAlerted;   // 低电量提醒已触发过，防止重复弹
     private bool _criticalBatteryAlerted; // 极低电量提醒
@@ -108,19 +108,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         CbTray.IsChecked = ReadRegBool(AppConst.RegBase, "TrayEnabled");
         CbAuto.IsChecked = ReadRegBool(AppConst.RegRun, AppConst.RegRunName);
 
-        // 设备型号选择
-        CbModel.Items.Add("自动检测");
-        CbModel.Items.Add("OPPO Enco Free4");
-        CbModel.Items.Add("OPPO Enco X3");
-        CbModel.Items.Add("OPPO Enco Air5");
-        CbModel.Items.Add("OPPO Enco Air4 Pro");
-        CbModel.Items.Add("OPPO Enco Air2 Pro");
-        _modelOverride = ReadRegStr(AppConst.RegBase, "ModelOverride");
-        CbModel.SelectedItem = _modelOverride ?? "自动检测";
+        // 设备型号自动检测
 
-        // 游戏模式实现
-        _gameModeCompat = ReadRegBool(AppConst.RegBase, "GameModeCompat");
-        CbGameMode.SelectedIndex = _gameModeCompat ? 1 : 0;
+        // 游戏模式默认兼容
 
         // 自定义设备名称
         var customName = ReadRegStr(AppConst.RegBase, "CustomName");
@@ -152,10 +142,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void OnStateChanged() => Dispatcher.Invoke(() =>
     {
         var s = _rfcomm.State;
-        // 型号覆盖优先于自动检测
-        var caps = _modelOverride != null
-            ? DeviceCapabilities.ForceModel(_modelOverride)
-            : _rfcomm.Caps;
+        var caps = _rfcomm.Caps;
 
         // 连接状态栏
         if (s.Connected)
@@ -164,7 +151,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             StatusText.Text = $"已连接 — {caps.ModelName}";
             StatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x88, 0xCC, 0x88));
             BtnReconnect.Visibility = Visibility.Collapsed;
-            _trayIcon.Icon = _iconConnected;
+            try { _trayIcon.Icon = _iconConnected; } catch { }
 
             // 首次连上且已获取到电量时弹出提示
             if (!_wasConnected && s.Battery.Count > 0)
@@ -185,7 +172,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             StatusText.Text = err ?? "未连接";
             StatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0x88, 0x88));
             BtnReconnect.Visibility = Visibility.Visible;
-            _trayIcon.Icon = _iconDisconnected;
+            try { _trayIcon.Icon = _iconDisconnected; } catch { }
 
             // 从已连接变为未连接时弹断连提示
             if (wasConnected)
@@ -236,7 +223,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         if (batL is { } lb) parts.Add($"L:{lb.Lvl}%{(lb.Chg ? "⚡" : "")}");
         if (batR is { } rb) parts.Add($"R:{rb.Lvl}%{(rb.Chg ? "⚡" : "")}");
         if (s.Battery.GetValueOrDefault("C") is { } cb) parts.Add($"C:{cb.Level}%{(cb.Charging ? "⚡" : "")}");
-        _trayIcon.Text = parts.Count > 0 ? $"{caps.ModelName}\n{string.Join(" ", parts)}" : caps.ModelName;
+        try { _trayIcon.Text = parts.Count > 0 ? $"{caps.ModelName}\n{string.Join(" ", parts)}" : caps.ModelName; } catch { }
 
         // 佩戴状态
         var wearList = new List<string>();
@@ -268,10 +255,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         SpatialAudioPanel.Visibility = caps.HasSpatialAudio ? Visibility.Visible : Visibility.Collapsed;
         CbSpatial.Visibility = caps.HasSpatialSound ? Visibility.Visible : Visibility.Collapsed;
         CbDualDevice.Visibility = caps.HasDualDevice ? Visibility.Visible : Visibility.Collapsed;
+        BtnAdaptive.Visibility = caps.HasAdaptiveAnc ? Visibility.Visible : Visibility.Collapsed;
 
         // 更新型号备注
-        if (_modelOverride == null)
-            ModelNote.Text = $"当前自动识别: {caps.ModelName}";
+        ModelNote.Text = $"当前自动识别: {caps.ModelName}";
         UpdateTitle();
     });
 
@@ -368,7 +355,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void CbGame_Changed(object s, RoutedEventArgs e)
     {
         _rfcomm.State.GameMode = CbGame.IsChecked == true;
-        _rfcomm.SendGameMode(CbGame.IsChecked == true, _gameModeCompat);
+        _rfcomm.SendGameMode(CbGame.IsChecked == true);
     }
 
     private void CbEq_SelectionChanged(object s, SelectionChangedEventArgs e)
@@ -420,41 +407,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         catch { }
     }
 
-    private void CbModel_Changed(object s, SelectionChangedEventArgs e)
-    {
-        if (CbModel.SelectedItem is not string sel) return;
-        _modelOverride = sel == "自动检测" ? null : sel;
-        WriteRegStr(AppConst.RegBase, "ModelOverride", _modelOverride);
-
-        // 刷新 EQ 列表和 UI
-        var caps = _modelOverride != null
-            ? DeviceCapabilities.ForceModel(_modelOverride)
-            : _rfcomm.Caps;
-
-        CbEq.SelectionChanged -= CbEq_SelectionChanged;
-        CbEq.Items.Clear();
-        foreach (var kv in caps.EqPresets) CbEq.Items.Add(kv.Key);
-        CbEq.SelectionChanged += CbEq_SelectionChanged;
-
-        SpatialAudioPanel.Visibility = caps.HasSpatialAudio ? Visibility.Visible : Visibility.Collapsed;
-        CbSpatial.Visibility = caps.HasSpatialSound ? Visibility.Visible : Visibility.Collapsed;
-        CbDualDevice.Visibility = caps.HasDualDevice ? Visibility.Visible : Visibility.Collapsed;
-
-        ModelNote.Text = sel == "自动检测"
-            ? $"当前自动识别: {_rfcomm.Caps.ModelName}"
-            : $"已手动指定: {caps.ModelName}";
-
-        // 同步更新状态栏和标题
-        UpdateTitle();
-        if (_rfcomm.State.Connected)
-            StatusText.Text = $"已连接 — {caps.ModelName}";
-    }
-
-    private void CbGameMode_Changed(object s, SelectionChangedEventArgs e)
-    {
-        _gameModeCompat = CbGameMode.SelectedIndex == 1;
-        WriteRegBool(AppConst.RegBase, "GameModeCompat", _gameModeCompat);
-    }
+    private void CbModel_Changed(object s, SelectionChangedEventArgs e) { }
+    private void CbGameMode_Changed(object s, SelectionChangedEventArgs e) { }
 
     private void CbTheme_Changed(object s, SelectionChangedEventArgs e)
     {
@@ -490,7 +444,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void UpdateTitle()
     {
-        var caps = _modelOverride != null ? DeviceCapabilities.ForceModel(_modelOverride) : _rfcomm.Caps;
+        var caps = _rfcomm.Caps;
         var custom = TbCustomName.Text.Trim();
         var name = !string.IsNullOrEmpty(custom) ? custom : caps.ModelName;
         TitleText.Text = name;
@@ -504,7 +458,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         if (bl is { } lb) parts.Add($"L:{lb.Lvl}%{(lb.Chg ? "⚡" : "")}");
         if (br is { } rb) parts.Add($"R:{rb.Lvl}%{(rb.Chg ? "⚡" : "")}");
         if (s.Battery.GetValueOrDefault("C") is { } cb) parts.Add($"C:{cb.Level}%{(cb.Charging ? "⚡" : "")}");
-        _trayIcon.Text = parts.Count > 0 ? $"{name}\n{string.Join(" ", parts)}" : name;
+        try { _trayIcon.Text = parts.Count > 0 ? $"{name}\n{string.Join(" ", parts)}" : name; } catch { }
     }
 
     private void Settings_Click(object s, RoutedEventArgs e)
@@ -575,7 +529,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void ShowTrayMenu()
     {
         var s = _rfcomm.State;
-        var caps = _modelOverride != null ? DeviceCapabilities.ForceModel(_modelOverride) : _rfcomm.Caps;
+        var caps = _rfcomm.Caps;
         var accent = GetAccentBrush();
         var bg = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x20, 0x20, 0x20));
 
@@ -648,7 +602,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             // 功能开关
             if (caps.HasGameMode)
                 stack.Children.Add(CreateMenuToggle("游戏模式", s.GameMode, () =>
-                { _rfcomm.SendGameMode(!s.GameMode, _gameModeCompat); s.GameMode = !s.GameMode; SyncUi(); closeMenu(); }));
+                { _rfcomm.SendGameMode(!s.GameMode); s.GameMode = !s.GameMode; SyncUi(); closeMenu(); }));
             if (caps.HasSpatialSound)
                 stack.Children.Add(CreateMenuToggle("空间音效", s.SpatialSound, () =>
                 { _rfcomm.SendSpatial(!s.SpatialSound); s.SpatialSound = !s.SpatialSound; SyncUi(); closeMenu(); }));
