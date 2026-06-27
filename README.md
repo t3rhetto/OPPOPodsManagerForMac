@@ -6,7 +6,7 @@
 
 ## English
 
-Windows desktop OPPO earbuds Bluetooth controller, supporting Enco Free4 / X3 / Air5 / Air2 Pro series.
+Windows desktop OPPO earbuds Bluetooth controller, supporting Enco Free4 / X3 / Air4 Pro /Air5 / Air2 Pro series.
 
 > **Only OPPO Enco Free4 has been fully tested — all features work correctly.** Other models' adaptation logic is ported from open-source reference projects and has not been verified on real devices. Full functionality is not guaranteed.
 
@@ -63,6 +63,7 @@ dotnet publish -c Release -r win-x64 -o publish
 | Enco Free4 | ✅ | ✅ | ✅ | —  | ✅ | 5 presets |
 | Enco X3    | ✅ | —  | —  | ✅ | ✅ | 5 presets |
 | Enco Air5  | ✅ | —  | ✅ | —  | —  | 5 presets |
+| Enco Air4 Pro | ✅ | —  | — | — | ✅ | 3 presets |
 | Enco Air2 Pro | ✅ | —  | —  | —  | —  | 5 presets |
 
 Other Bluetooth devices whose name contains "OPPO" will auto-connect with a generic feature set.
@@ -96,7 +97,7 @@ GPL-3.0
 
 ## 中文
 
-Windows 桌面端 OPPO 耳机蓝牙控制器，支持 Enco Free4 / X3 / Air5 / Air2 Pro 系列。
+Windows 桌面端 OPPO 耳机蓝牙控制器，支持 Enco Free4 / X3 / Air4 Pro / Air5 / Air2 Pro 系列。
 
 > **当前仅完整测试过 OPPO Enco Free4，功能均正常。** 其他机型适配逻辑移植自开源参考项目，未做真机验证，不保证全部功能可用。
 
@@ -153,6 +154,7 @@ dotnet publish -c Release -r win-x64 -o publish
 | Enco Free4 | ✅ | ✅ | ✅ | — | ✅ | 5 种 |
 | Enco X3 | ✅ | — | — | ✅ | ✅ | 5 种 |
 | Enco Air5 | ✅ | — | ✅ | — | — | 5 种 |
+| Enco Air4 Pro | ✅ | —  | — | — | ✅ | 3 种 |
 | Enco Air2 Pro | ✅ | — | — | — | — | 5 种 |
 
 其他名称包含 "OPPO" 的蓝牙设备可自动连接，使用通用功能集。

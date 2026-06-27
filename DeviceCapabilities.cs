@@ -31,7 +31,7 @@ public class DeviceCapabilities
     private static readonly HashSet<string> SpatialAudioModels = new() { "encox3" };
     private static readonly HashSet<string> SpatialSoundModels = new() { "encofree4", "encoair5" };
     private static readonly HashSet<string> LegacyAncModels   = new() { "encoair2pro" };
-    private static readonly HashSet<string> DualDeviceModels  = new() { "encofree4", "encox3" };
+    private static readonly HashSet<string> DualDeviceModels  = new() { "encofree4", "encox3", "encoair4pro" };
 
     // X3 大师调音（5种，与欢律一致）
     private static readonly Dictionary<string, byte> X3Eq = new()
@@ -51,6 +51,14 @@ public class DeviceCapabilities
         ["澎湃低音"] = 2,
         ["丹拿特调"] = 3,
         ["活力动感"] = 7,
+    };
+
+    // Air4 Pro 调音 (实测)
+    private static readonly Dictionary<string, byte> Air4ProEq = new()
+    {
+        ["纯粹原音"] = 0,
+        ["脉冲低音"] = 1,
+        ["悠扬人声"] = 2,
     };
 
     // ============================================================
@@ -75,6 +83,7 @@ public class DeviceCapabilities
         "OPPO Enco X3"       => DetectByNorm("encox3", "OPPO Enco X3"),
         "OPPO Enco Air5"     => DetectByNorm("encoair5", "OPPO Enco Air5"),
         "OPPO Enco Air2 Pro" => DetectByNorm("encoair2pro", "OPPO Enco Air2 Pro"),
+        "OPPO Enco Air4 Pro" => DetectByNorm("encoair4pro", "OPPO Enco Air4 Pro"),
         _                    => Default()
     };
 
@@ -105,6 +114,11 @@ public class DeviceCapabilities
         {
             caps.EqPresets = Free4Eq;   // Air5 与 Free4 一致
             caps.ModelName = "OPPO Enco Air5";
+        }
+        else if (Match(norm, "encoair4pro"))
+        {
+            caps.EqPresets = Air4ProEq;
+            caps.ModelName = "OPPO Enco Air4 Pro";
         }
         else if (Match(norm, "encoair2pro"))
         {

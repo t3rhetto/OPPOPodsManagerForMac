@@ -113,6 +113,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         CbModel.Items.Add("OPPO Enco Free4");
         CbModel.Items.Add("OPPO Enco X3");
         CbModel.Items.Add("OPPO Enco Air5");
+        CbModel.Items.Add("OPPO Enco Air4 Pro");
         CbModel.Items.Add("OPPO Enco Air2 Pro");
         _modelOverride = ReadRegStr(AppConst.RegBase, "ModelOverride");
         CbModel.SelectedItem = _modelOverride ?? "自动检测";
