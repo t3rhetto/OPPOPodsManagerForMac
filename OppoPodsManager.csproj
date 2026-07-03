@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <RootNamespace>OppoPodsManager</RootNamespace>
+    <AssemblyName>OppoPodsManager</AssemblyName>
+    <ApplicationIcon>Assets\tuopan.ico</ApplicationIcon>
+    <SupportedOSPlatformVersion>windows</SupportedOSPlatformVersion>
+    <NoWarn>CA1416</NoWarn>
+    <PublishAot>true</PublishAot>
+    <SelfContained>true</SelfContained>
+    <StripSymbols>true</StripSymbols>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <DebuggerSupport>false</DebuggerSupport>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <!-- Embedded JSON data -->
+  <ItemGroup>
+    <EmbeddedResource Include="DeviceModels.json" />
+    <EmbeddedResource Include="EqModeNames.json" />
+  </ItemGroup>
+
+  <!-- Avalonia assets -->
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <!-- Avalonia + SukiUI packages -->
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.0.5" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.0.5" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.5" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.5" />
+    <PackageReference Include="SukiUI" Version="7.0.1" />
+  </ItemGroup>
+
+  <!-- 发布后删除原生 .pdb 文件 -->
+  <Target Name="RemovePdbAfterPublish" AfterTargets="Publish">
+    <Delete Files="$(PublishDir)*.pdb" />
+  </Target>
+</Project>

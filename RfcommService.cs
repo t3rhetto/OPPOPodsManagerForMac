@@ -6,7 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Win32;
 
-namespace OppoPodsWPF;
+namespace OppoPodsManager;
 
 public class RfcommService : IDisposable
 {
@@ -125,6 +125,9 @@ public class RfcommService : IDisposable
                 Send(OppoProtocol.PktQueryEq);
                 Thread.Sleep(80);
                 Send(OppoProtocol.PktRegisterNotify);
+                Thread.Sleep(80);
+                Send(OppoProtocol.PktRegisterWear);  // 单独注册佩戴通知
+                System.Diagnostics.Debug.WriteLine("[BT] Registered for wearing notifications");
                 Thread.Sleep(80);
                 Send(OppoProtocol.PktMultiConnectInfo);
                 Thread.Sleep(500);
@@ -328,6 +331,9 @@ public class RfcommService : IDisposable
             case OppoProtocol.CmdMultiConnectResp:
                 ParseMultiConnect(pkt, payloadStart, payLen);
                 break;
+            default:
+                System.Diagnostics.Debug.WriteLine($"[BT] Unhandled CMD: 0x{cmd:X4} len={payLen}");
+                break;
         }
     }
 
@@ -366,6 +372,7 @@ public class RfcommService : IDisposable
     {
         if (len < 2) return;
         int reportType = pkt[start];
+        System.Diagnostics.Debug.WriteLine($"[BT] ParseActiveReport: type=0x{reportType:X2} len={len}");
         if (reportType == 0x01)
         {
             int count = pkt[start + 1];
@@ -381,20 +388,31 @@ public class RfcommService : IDisposable
         }
         else if (reportType == 0x02)
         {
-            int count = pkt[start + 1];
-            for (int j = 0; j < count && start + 2 + j * 2 + 1 < start + len; j++)
-            {
-                int comp = pkt[start + 2 + j * 2];
-                int st = pkt[start + 2 + j * 2 + 1];
-                string status = st switch
-                {
-                    0 => "已断连", 4 => "入盒", 5 => "摘下", 7 => "佩戴", _ => "?"
-                };
-                if (comp == 1) State.WearingL = status;
-                else if (comp == 2) State.WearingR = status;
-            }
+            ParseWearingData(pkt, start, len);
+        }
+        else if (reportType == 0x06)  // 实际是多设备信息，非佩戴数据
+        {
+            // 不要用 wearing 格式解析，只是记录
         }
         StateChanged?.Invoke();
+    }
+
+    private void ParseWearingData(byte[] pkt, int start, int len)
+    {
+        if (len < 3) return;
+        int count = pkt[start + 1];
+        for (int j = 0; j < count && start + 2 + j * 2 + 1 < start + len; j++)
+        {
+            int comp = pkt[start + 2 + j * 2];
+            int st = pkt[start + 2 + j * 2 + 1];
+            string status = st switch
+            {
+                0 => "已断连", 4 => "入盒", 5 => "摘下", 7 => "佩戴", _ => "?" + st
+            };
+            if (comp == 1) State.WearingL = status;
+            else if (comp == 2) State.WearingR = status;
+        }
+        System.Diagnostics.Debug.WriteLine($"[BT] Wearing parsed: L='{State.WearingL}' R='{State.WearingR}'");
     }
 
     private void ParseEq(byte[] pkt, int start, int len)
@@ -483,6 +501,7 @@ public class RfcommService : IDisposable
                 State.ConnectedDevices = devices;
                 State.MultiConnectListUpdatedAt = DateTime.Now;
                 System.Diagnostics.Debug.WriteLine("[BT] Multi-device list updated: " + devices.Count + " devices, names: " + string.Join(", ", devices.Select(d => d.DeviceName)));
+                System.Diagnostics.Debug.WriteLine("[BT] Wearing status: L='" + State.WearingL + "' R='" + State.WearingR + "'");
                 StateChanged?.Invoke();
             }
         }
@@ -562,6 +581,18 @@ public class RfcommService : IDisposable
                         ReadResponses(400);
                     }
 
+                    if (tick % 4 == 0)  // 每 4 轮重订阅佩戴通知
+                    {
+                        System.Diagnostics.Debug.WriteLine("[BT] Re-registering wearing notification (tick=" + tick + ")");
+                        Send(OppoProtocol.PktRegisterNotify);
+                        Thread.Sleep(100);
+                        Send(OppoProtocol.PktRegisterWear);
+                        Thread.Sleep(100);
+                        System.Diagnostics.Debug.WriteLine("[BT] Current wear state: L='" + State.WearingL + "' R='" + State.WearingR + "'");
+                        ReadResponses(400);
+                        System.Diagnostics.Debug.WriteLine("[BT] After read: wear state: L='" + State.WearingL + "' R='" + State.WearingR + "'");
+                    }
+
                     if (tick % 4 == 0)  // 每 4 轮查多设备连接列表（与功能状态同步）
                     {
                         Send(OppoProtocol.PktMultiConnectInfo);
@@ -609,8 +640,12 @@ public class RfcommService : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        Disconnect();
-        WSACleanup();
+        try
+        {
+            Disconnect();
+            WSACleanup();
+        }
+        catch { }
         _disposed = true;
     }
 }

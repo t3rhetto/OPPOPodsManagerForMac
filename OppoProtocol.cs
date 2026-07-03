@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace OppoPodsWPF;
+namespace OppoPodsManager;
 
 /// <summary>OPPO 私有 RFCOMM 协议定义。命令字和 feature ID 来自逆向工程，各型号通用。</summary>
 public static class OppoProtocol
@@ -100,6 +100,10 @@ public static class OppoProtocol
     /// <summary>订阅主动通知：电池 + 佩戴 + ANC</summary>
     public static readonly byte[] PktRegisterNotify = BuildPacket(CmdRegisterNotify,
         new byte[] { 0x01, 0x01, 0x02, 0x02 });
+
+    /// <summary>单独订阅佩戴通知（部分设备需要单独注册，使用 action=0x02）</summary>
+    public static readonly byte[] PktRegisterWear = BuildPacket(CmdRegisterNotify,
+        new byte[] { 0x02, 0x02 });
 
     /// <summary>批量查询包，查询 12 个功能 feature 的状态</summary>
     public static readonly byte[] PktBatchQuery = BuildPacket(CmdBatchQuery,

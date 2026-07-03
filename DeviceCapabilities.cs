@@ -5,7 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 
-namespace OppoPodsWPF;
+namespace OppoPodsManager;
 
 /// <summary>
 /// 设备能力检测。从 DeviceModels.json 加载 whitelist 配置，按蓝牙名称匹配设备。
@@ -42,7 +42,7 @@ public class DeviceCapabilities
         try
         {
             var asm = Assembly.GetExecutingAssembly();
-            using var stream = asm.GetManifestResourceStream("OppoPodsWPF.DeviceModels.json");
+            using var stream = asm.GetManifestResourceStream("OppoPodsManager.DeviceModels.json");
             if (stream == null) return new List<JsonElement>();
             using var reader = new StreamReader(stream);
             var doc = JsonDocument.Parse(reader.ReadToEnd());
@@ -64,7 +64,7 @@ public class DeviceCapabilities
         try
         {
             var asm = Assembly.GetExecutingAssembly();
-            using var stream = asm.GetManifestResourceStream("OppoPodsWPF.EqModeNames.json");
+            using var stream = asm.GetManifestResourceStream("OppoPodsManager.EqModeNames.json");
             if (stream == null) return new Dictionary<string, string>();
             using var reader = new StreamReader(stream);
             var doc = JsonDocument.Parse(reader.ReadToEnd());

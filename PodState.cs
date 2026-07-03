@@ -1,9 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace OppoPodsWPF;
+namespace OppoPodsManager;
 
 /// <summary>已连接设备信息（多设备连接列表中的一项）</summary>
 public class ConnectedDeviceInfo : INotifyPropertyChanged
@@ -18,12 +18,12 @@ public class ConnectedDeviceInfo : INotifyPropertyChanged
     public bool IsCurrentDevice
     {
         get => _isCurrentDevice;
-        set { if (_isCurrentDevice != value) { _isCurrentDevice = value; OnChanged(nameof(IsCurrentDevice)); OnChanged(nameof(DisplayName)); } }
+        set { if (_isCurrentDevice != value) { _isCurrentDevice = value; OnChanged(); OnChanged(nameof(DisplayName)); } }
     }
 
     public bool IsMainAudioDevice { get; set; }
 
-    /// <summary>显示名称（当前设备加 ✓ 标记；UI ItemTemplate 改用 IsCurrentDevice 独立显示 ✓）</summary>
+    /// <summary>显示名称</summary>
     public string ConnectionStatus => ConnectionState switch
     {
         2 => IsCurrentDevice ? "当前设备" : "已连接",
@@ -34,7 +34,8 @@ public class ConnectedDeviceInfo : INotifyPropertyChanged
     public string DisplayName => DeviceName;
 
     public event PropertyChangedEventHandler? PropertyChanged;
-    private void OnChanged([CallerMemberName] string? n = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
+    private void OnChanged([CallerMemberName] string? n = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
 }
 
 public class PodState
@@ -56,4 +57,3 @@ public class PodState
     /// <summary>多设备列表最近更新时间</summary>
     public DateTime MultiConnectListUpdatedAt { get; set; } = DateTime.MinValue;
 }
-
