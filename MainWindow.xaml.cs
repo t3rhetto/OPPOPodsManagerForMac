@@ -62,6 +62,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     // brand → (series → models)
     private Dictionary<string, Dictionary<string, List<string>>> _brandTree = new();
 
+    // v1.0.6: 多设备列表（绑给标题栏 CbDevice）
+    private readonly ObservableCollection<ConnectedDeviceInfo> _multiDeviceList = new();
+
     public MainWindow()
     {
         InitializeComponent();
@@ -159,6 +162,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         // 自定义设备名称
         var customName = ReadRegStr(AppConst.RegBase, "CustomName");
         TbCustomName.Text = customName ?? "";
+
+        // v1.0.6: 多设备下拉（标题栏 CbDevice）
+        CbDevice.ItemsSource = _multiDeviceList;
+        SyncMultiDeviceList();
+
         UpdateTitle();
 
         _rfcomm.StateChanged += OnStateChanged;
@@ -305,6 +313,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
         // 更新型号备注
         ModelNote.Text = $"当前自动识别: {caps.ModelName}";
+        SyncMultiDeviceList();  // v1.0.6
         UpdateTitle();
     });
 
@@ -582,6 +591,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             ? $"当前自动识别: {_rfcomm.Caps.ModelName}"
             : $"已手动指定: {caps.ModelName}";
 
+        SyncMultiDeviceList();  // v1.0.6
         UpdateTitle();
         if (_rfcomm.State.Connected)
         {
@@ -635,7 +645,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             : _rfcomm.Caps;
         var custom = TbCustomName.Text.Trim();
         var name = !string.IsNullOrEmpty(custom) ? custom : caps.ModelName;
-        TitleText.Text = name;
         Title = name;
 
         // 同步托盘提示
@@ -671,12 +680,99 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         e.Handled = true;
     }
 
-    private void TitleBar_MouseDown(object s, MouseButtonEventArgs e) { if (e.LeftButton == MouseButtonState.Pressed) DragMove(); }
+    private void TitleBar_MouseDown(object s, MouseButtonEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed) return;
+        // ComboBox 内点击不应触发拖动（点它应该展开下拉）
+        if (e.OriginalSource is DependencyObject d)
+        {
+            var cur = d;
+            while (cur != null && cur is not ComboBox && cur != s)
+                cur = System.Windows.Media.VisualTreeHelper.GetParent(cur);
+            if (cur is ComboBox) return;
+        }
+        DragMove();
+    }
     private void Close_Click(object s, RoutedEventArgs e) => Close();
 
     private void Reconnect_Click(object s, RoutedEventArgs e)
     {
         _rfcomm.Disconnect();  // 关闭旧 socket，触发 PollAsync 退出 → ConnectAsync 循环自动重连
+    }
+
+    // ===== v1.0.6: 多设备切换（标题栏 CbDevice） =====
+    // 从真实 `_rfcomm.State.ConnectedDevices` 同步（由 RfcommService.ParseMultiConnect 定期更新）
+    private void SyncMultiDeviceList()
+    {
+        var prev = (CbDevice.SelectedItem as ConnectedDeviceInfo)?.Address;
+        _multiDeviceList.Clear();
+
+        var real = _rfcomm.State.ConnectedDevices;
+        if (real is { Count: > 0 })
+        {
+            // 只保留耳机/耳塞类设备：耳机固件列出的"已连接"里会包含用户的电脑/手机/平板
+            // 用名字前缀 + 品牌白名单过滤掉非耳机设备
+            foreach (var d in real)
+            {
+                if (IsHeadphoneDevice(d)) _multiDeviceList.Add(d);
+            }
+        }
+        else
+        {
+            // 还没拉到多设备列表：把当前已连的那一副作为"当前设备"占位，避免下拉框空
+            var s = _rfcomm.State;
+            if (s.Connected)
+            {
+                var caps = _modelOverride != null
+                    ? DeviceCapabilities.ForceModel(_modelOverride)
+                    : _rfcomm.Caps;
+                _multiDeviceList.Add(new ConnectedDeviceInfo
+                {
+                    Address = "current",
+                    DeviceName = caps.ModelName,
+                    ConnectionState = 2,
+                    IsCurrentDevice = true,
+                });
+            }
+        }
+
+        // 选中项：尝试保留之前选中的，否则用 IsCurrentDevice 标记的，否则第一项
+        var target = _multiDeviceList.FirstOrDefault(d => d.Address == prev)
+                     ?? _multiDeviceList.FirstOrDefault(d => d.IsCurrentDevice)
+                     ?? _multiDeviceList.FirstOrDefault();
+        CbDevice.SelectedItem = target;
+    }
+
+    private void CbDevice_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (CbDevice.SelectedItem is not ConnectedDeviceInfo sel) return;
+        // 1) 更新 IsCurrentDevice
+        foreach (var d in _multiDeviceList) d.IsCurrentDevice = (d.Address == sel.Address);
+        // 2) 真设备发切机指令；"current" 占位项（还没拉到多设备列表时）不发
+        if (sel.Address != "current")
+            _rfcomm.SendOperateHandheld(sel.Address, true);
+    }
+
+    // 过滤非耳机设备：耳机固件 0x8112 列出的"已连接"会包含用户的电脑/手机/平板。
+    // 策略：黑名单（电脑/手机系统名/品牌前缀）直接排除；其他（不认识的设备）都保留，
+    // 避免把没出现在白名单里的真耳机也误过滤掉。
+    private static readonly string[] NonHeadphoneNamePrefixes = new[]
+    {
+        "DESKTOP-", "LAPTOP-",      // Windows 电脑名
+        "iPhone", "iPad",            // Apple
+        "Galaxy ",                   // 三星
+        "Xiaomi ", "Redmi ", "Mi ",  // 小米
+        "HUAWEI ", "HONOR ",         // 华为
+        "Pixel",                     // Google
+    };
+
+    private static bool IsHeadphoneDevice(ConnectedDeviceInfo d)
+    {
+        var name = d.DeviceName ?? "";
+        if (string.IsNullOrEmpty(name)) return false;
+        foreach (var p in NonHeadphoneNamePrefixes)
+            if (name.StartsWith(p, StringComparison.OrdinalIgnoreCase)) return false;
+        return true;  // 名字不在黑名单就保留（包含所有真耳机）
     }
 
     private void ResetUi()
@@ -688,6 +784,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         AncSub.Visibility = Visibility.Collapsed;
         CbSpatial.IsChecked = false;
         CbGame.IsChecked = false;
+        _multiDeviceList.Clear();  // v1.0.6
     }
 
     private void OnWindowClosing(object? s, CancelEventArgs e)

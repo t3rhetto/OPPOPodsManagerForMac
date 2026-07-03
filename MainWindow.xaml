@@ -8,17 +8,30 @@
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="36"/>
+            <RowDefinition Height="40"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- 标题栏 -->
-        <Grid Grid.Row="0" MouseLeftButtonDown="TitleBar_MouseDown">
-            <TextBlock x:Name="TitleText" Text="" FontSize="13" VerticalAlignment="Center" Margin="12,0,0,0"
-                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+        <!-- 标题栏（v1.0.6: 原生 ComboBox 跟设置页一致） -->
+        <Grid Grid.Row="0" Background="Transparent" MouseLeftButtonDown="TitleBar_MouseDown">
+            <ComboBox x:Name="CbDevice" SelectionChanged="CbDevice_SelectionChanged"
+                      Height="30" MinWidth="120" MaxWidth="240"
+                      HorizontalAlignment="Left" VerticalAlignment="Center"
+                      Margin="16,0,0,0" Padding="8,0"
+                      FontSize="12" Cursor="Hand"
+                      HorizontalContentAlignment="Left"
+                      VerticalContentAlignment="Center"
+                      ToolTip="切换当前操作的耳机">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding DeviceName}" Padding="2,0"/>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
             <Button Width="40" Height="28" Click="Close_Click"
                     HorizontalAlignment="Right" VerticalAlignment="Center"
+                    Margin="0,0,4,0"
                     Background="Transparent" BorderThickness="0"
                     Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                     Cursor="Hand">
@@ -301,7 +314,7 @@
                     <TextBlock Text="关于" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,12"
                                HorizontalAlignment="Center"/>
                     <TextBlock Text="OPPO Pods For Windows" FontSize="13" HorizontalAlignment="Center" Margin="0,0,0,4"/>
-                    <TextBlock Text="v1.0.5" FontSize="11" HorizontalAlignment="Center" Opacity="0.5" Margin="0,0,0,12"/>
+                    <TextBlock Text="v1.0.6" FontSize="11" HorizontalAlignment="Center" Opacity="0.5" Margin="0,0,0,12"/>
                     <TextBlock Text="致谢" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,4"/>
                     <TextBlock FontSize="10" HorizontalAlignment="Center" Opacity="0.6" Margin="0,0,0,2">
                         <Hyperlink NavigateUri="https://github.com/Leaf-lsgtky/OppoPods" RequestNavigate="Hyperlink_RequestNavigate">
@@ -348,6 +361,7 @@
                 <Button x:Name="BtnReconnect" Content="重新连接" Height="24" FontSize="11"
                         HorizontalAlignment="Right" Click="Reconnect_Click"
                         Padding="12,0" Visibility="Collapsed"/>
+
             </Grid>
         </Border>
 
