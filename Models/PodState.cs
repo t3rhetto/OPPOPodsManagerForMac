@@ -61,6 +61,7 @@ public class PodState
     public bool SpatialSound { get; set; }
     public string SpatialMode { get; set; } = "Off";
     public bool GameMode { get; set; }
+    public bool GameSound { get; set; }   // 游戏音效（0x812B selectType != 0）
     public bool DualDevice { get; set; }
 
     /// <summary>多设备连接列表（由主动轮询同步）</summary>

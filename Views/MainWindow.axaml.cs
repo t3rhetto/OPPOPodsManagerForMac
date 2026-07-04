@@ -99,7 +99,9 @@ public partial class MainWindow : SukiWindow
     // CheckBox 脏检查状态
     private bool _prevSpatialSound;
     private bool _prevGameMode;
+    private bool _prevGameSound;
     private bool _prevDualDevice;
+    private string _prevSpatialMode = "";
 
     // 三级联动：品牌 → 子系列 → 机型
     private readonly ObservableCollection<string> _brandList = new();
@@ -118,6 +120,7 @@ public partial class MainWindow : SukiWindow
         // Wire events programmatically (Avalonia 12 compatibility)
             CbSpatial.IsCheckedChanged += CbSpatial_Changed;
             CbGame.IsCheckedChanged += CbGame_Changed;
+            CbGameSound.IsCheckedChanged += CbGameSound_Changed;
         CbDualDevice.IsCheckedChanged += CbDualDevice_Changed;
         CbTray.IsCheckedChanged += CbTray_Changed;
         CbAuto.IsCheckedChanged += CbAuto_Changed;
@@ -342,8 +345,9 @@ public partial class MainWindow : SukiWindow
             SyncAncFromState(s.AncMode);
         HighlightAnc();
 
-        // 智能切换：显示设备实时计算出的档位（如"实时：深度"）
-        if (_ancMain == "Smart" && !string.IsNullOrEmpty(s.IntelligentRealtime))
+        // 智能切换：显示设备实时计算出的档位（如"实时计算：深度"）。
+        // 注意 Smart 在容器型设备是子档位(_ancLevel)，在扁平型是主模式(_ancMain)，两者都要判。
+        if ((_ancMain == "Smart" || _ancLevel == "Smart") && !string.IsNullOrEmpty(s.IntelligentRealtime))
         {
             AncRealtimeHint.Text = $"实时计算：{AncModeLabel(s.IntelligentRealtime)}";
             AncRealtimeHint.IsVisible = true;
@@ -356,9 +360,12 @@ public partial class MainWindow : SukiWindow
         if (s.EqPreset != "?" && CbEq.SelectedItem == null) CbEq.SelectedItem = s.EqPreset;
         if ((DateTime.Now - _featureUserSetAt).TotalSeconds > 3)
         {
-            if (s.SpatialSound != _prevSpatialSound) { _prevSpatialSound = s.SpatialSound; CbSpatial.IsChecked = s.SpatialSound; }
-            if (s.GameMode != _prevGameMode) { _prevGameMode = s.GameMode; CbGame.IsChecked = s.GameMode; }
-            if (s.DualDevice != _prevDualDevice) { _prevDualDevice = s.DualDevice; CbDualDevice.IsChecked = s.DualDevice; }
+            // 状态回读同步：均用静默设置，避免初始化/轮询勾选反向触发 _Changed 下发命令
+            if (s.SpatialSound != _prevSpatialSound) { _prevSpatialSound = s.SpatialSound; SetSpatialCheckedSilent(s.SpatialSound); }
+            if (caps.HasSpatialAudio && s.SpatialMode != _prevSpatialMode) { _prevSpatialMode = s.SpatialMode; SyncSpatialModeFromState(s.SpatialMode); }
+            if (s.GameMode != _prevGameMode) { _prevGameMode = s.GameMode; SetGameCheckedSilent(s.GameMode); }
+            if (s.GameSound != _prevGameSound) { _prevGameSound = s.GameSound; SetGameSoundCheckedSilent(s.GameSound); }
+            if (s.DualDevice != _prevDualDevice) { _prevDualDevice = s.DualDevice; SetDualDeviceCheckedSilent(s.DualDevice); }
         }
 
         BuildAncUi(caps);
@@ -368,6 +375,7 @@ public partial class MainWindow : SukiWindow
         CbDualDevice.IsVisible = caps.HasDualDevice;
         DevicePanel.IsVisible = caps.HasDualDevice;
         CbGame.IsVisible = caps.HasGameMode;
+        CbGameSound.IsVisible = caps.HasGameSound;
 
         ModelNote.Text = $"当前自动识别: {caps.ModelName}";
         UpdateTitle();
@@ -611,6 +619,12 @@ public partial class MainWindow : SukiWindow
         {
             Log.D("UI", $"用户操作: 空间声场开关 -> {on}");
             _featureUserSetAt = DateTime.Now;
+            // 音效增强互斥：开空间音效 → 需显式关游戏音效（设备不会自动关），UI 同步取消勾选并下发关闭命令
+            if (on && _pods.Caps.GameSoundMutexSpatial && CbGameSound.IsChecked == true)
+            {
+                SetGameSoundCheckedSilent(false);
+                _pods.SendGameSound(false);
+            }
             _pods.SendSpatial(on);
         }
     }
@@ -623,6 +637,54 @@ public partial class MainWindow : SukiWindow
             _featureUserSetAt = DateTime.Now;
             _pods.SendGameMode(on, _gameModeCompat);
         }
+    }
+
+    private void CbGameSound_Changed(object? s, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (CbGameSound.IsChecked is { } on && _pods.IsConnected)
+        {
+            Log.D("UI", $"用户操作: 游戏音效开关 -> {on}");
+            _featureUserSetAt = DateTime.Now;
+            // 音效增强互斥：开游戏音效 → 需显式关空间音效（设备不会自动关），UI 同步取消勾选并下发关闭命令
+            if (on && _pods.Caps.GameSoundMutexSpatial && CbSpatial.IsChecked == true)
+            {
+                SetSpatialCheckedSilent(false);
+                _pods.SendSpatial(false);
+            }
+            _pods.SendGameSound(on);
+        }
+    }
+
+    /// <summary>不触发事件地设置游戏音效勾选态（避免互斥联动递归下发命令）。</summary>
+    private void SetGameSoundCheckedSilent(bool value)
+    {
+        CbGameSound.IsCheckedChanged -= CbGameSound_Changed;
+        CbGameSound.IsChecked = value;
+        CbGameSound.IsCheckedChanged += CbGameSound_Changed;
+    }
+
+    /// <summary>不触发事件地设置空间音效勾选态。</summary>
+    private void SetSpatialCheckedSilent(bool value)
+    {
+        CbSpatial.IsCheckedChanged -= CbSpatial_Changed;
+        CbSpatial.IsChecked = value;
+        CbSpatial.IsCheckedChanged += CbSpatial_Changed;
+    }
+
+    /// <summary>不触发事件地设置游戏模式勾选态（用于初始化/轮询回读，非用户操作）。</summary>
+    private void SetGameCheckedSilent(bool value)
+    {
+        CbGame.IsCheckedChanged -= CbGame_Changed;
+        CbGame.IsChecked = value;
+        CbGame.IsCheckedChanged += CbGame_Changed;
+    }
+
+    /// <summary>不触发事件地设置双设备连接勾选态（用于初始化/轮询回读，非用户操作）。</summary>
+    private void SetDualDeviceCheckedSilent(bool value)
+    {
+        CbDualDevice.IsCheckedChanged -= CbDualDevice_Changed;
+        CbDualDevice.IsChecked = value;
+        CbDualDevice.IsCheckedChanged += CbDualDevice_Changed;
     }
 
     private void CbDualDevice_Changed(object? s, Avalonia.Interactivity.RoutedEventArgs e)
@@ -709,6 +771,7 @@ public partial class MainWindow : SukiWindow
         CbDualDevice.IsVisible = caps.HasDualDevice;
         DevicePanel.IsVisible = caps.HasDualDevice;
         CbGame.IsVisible = caps.HasGameMode;
+        CbGameSound.IsVisible = caps.HasGameSound;
 
         ModelNote.Text = _modelOverride == null
             ? $"当前自动识别: {_pods.Caps.ModelName}"
@@ -817,6 +880,7 @@ public partial class MainWindow : SukiWindow
         AncSub.IsVisible = false;
         CbSpatial.IsChecked = false;
         CbGame.IsChecked = false;
+        CbGameSound.IsChecked = false;
         DeviceList.Items.Clear();
     }
 
@@ -972,6 +1036,24 @@ public partial class MainWindow : SukiWindow
                     foreach (var c in wp.Children)
                         if (c is RadioButton rb)
                             rb.IsCheckedChanged += SpatialAudio_Changed;
+    }
+
+    /// <summary>按设备回读的空间音频三模式（0x812A）静默勾选对应单选项，不触发 SendSpatialAudio。</summary>
+    private void SyncSpatialModeFromState(string mode)
+    {
+        if (SpatialAudioPanel.Child is not StackPanel sp) return;
+        foreach (var child in sp.Children)
+            if (child is WrapPanel wp)
+                foreach (var c in wp.Children)
+                    if (c is RadioButton rb && rb.Tag is string tag)
+                    {
+                        bool shouldCheck = tag == mode;
+                        if (rb.IsChecked == shouldCheck) continue;
+                        // 临时摘除事件，避免回读同步反向触发设置命令
+                        rb.IsCheckedChanged -= SpatialAudio_Changed;
+                        rb.IsChecked = shouldCheck;
+                        rb.IsCheckedChanged += SpatialAudio_Changed;
+                    }
     }
 
     // ========== 品牌/系列/机型树构建 ==========

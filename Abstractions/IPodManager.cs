@@ -5,6 +5,18 @@ using System.Threading.Tasks;
 namespace OppoPodsManager;
 
 /// <summary>
+/// 音效增强互斥组的选项（同一时刻只能生效一个，对齐官方 GameSoundMutexHelper）。
+/// 具体哪些项参与互斥由型号 gameSoundMutexes 决定。
+/// </summary>
+public enum AudioEnhancement
+{
+    None,          // 都关闭
+    Eq,            // 调音（大师 EQ 预设）
+    SpatialSound,  // 空间音效
+    GameSound,     // 游戏音效强化
+}
+
+/// <summary>
 /// 前后端契约（防火墙）：前端只依赖本接口与其暴露的数据结构。
 /// 后端（PodManager + Transport/Protocol）可任意重构内部逻辑，
 /// 只要本接口签名与下列数据结构不变，前端界面无需改动；反之前端改界面也不影响后端。
@@ -49,7 +61,16 @@ public interface IPodManager : IDisposable
     void SendSpatialAudio(string mode);
     void SendDualDevice(bool on);
     void SendGameMode(bool on, bool compatible = false);
+    void SendGameSound(bool on);
     void SendEq(string name);
+
+    // ===== 音效增强互斥组（游戏音效 ↔ 调音 ↔ 空间音效，官方 GameSoundMutexHelper）=====
+    /// <summary>当前生效的音效增强项（从设备状态推导）。</summary>
+    AudioEnhancement CurrentEnhancement();
+    /// <summary>设置音效增强（互斥单选，静默切换；设备固件自动关互斥项）。</summary>
+    void SetAudioEnhancement(AudioEnhancement mode, string? eqName = null);
+    /// <summary>UI 注入"刚操作"钩子，抑制轮询回读短时覆盖。</summary>
+    void SetFeatureUserSetHook(Action hook);
     void SendBattery();
     void SendMultiConnectInfo();
     void SendOperateHandheld(string targetAddress, bool connect = true);

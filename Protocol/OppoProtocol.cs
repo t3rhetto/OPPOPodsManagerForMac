@@ -62,7 +62,11 @@ public static class OppoProtocol
     public const ushort CmdQueryBassEngine   = 0x0124;  // 低音引擎（降噪新格式）
     public const ushort CmdQueryAccountKey   = 0x0125;  // AccountKey
     public const ushort CmdQuerySpineCalib   = 0x0129;  // 脊柱校准状态
-    public const ushort CmdQueryColorIdAlt   = 0x012A;  // 耳机颜色 ID（备用）
+    // 0x012A：官方 getHeadsetSpatialType（PollCommandManager 日志 "getHeadsetSpatialType UNSUPPORTED cmd=0x12a"）。
+    // 查询当前空间音频三模式（Off/Fixed/Track），响应 0x812A = [status(1)][spatialType(1)]。
+    // （旧注释误标为"耳机颜色 ID 备用"，实为空间音频状态回读命令。）
+    public const ushort CmdQueryHeadsetSpatial = 0x012A;  // 查询空间音频三模式当前值
+    public const ushort CmdHeadsetSpatialResp  = 0x812A;  // 空间音频三模式查询响应
     public const ushort CmdQueryGameSound    = 0x012B;  // 游戏音效信息
     public const ushort CmdSetCurrentNoise   = 0x012E;  // 设置当前降噪（PCM 写路径）
     public const ushort CmdSetBuildModel     = 0x041F;  // 设置机型 Build.MODEL
@@ -76,7 +80,7 @@ public static class OppoProtocol
     public const ushort CmdSetEqDetail       = 0x0418;  // 设置详细 EQ（自定义频段）
     public const ushort CmdSetSpatialAudioV2 = 0x0417;  // 空间音频（旧路）
     public const ushort CmdSetGameModeV2     = 0x0412;  // 游戏模式（新版）
-    public const ushort CmdSetFeatureSwitch  = 0x0423;  // 功能开关设置 [value][enable]
+    public const ushort CmdSetFeatureSwitch  = 0x0423;  // 游戏音效开关 setGameSoundTypeEnable [type][enable]（官方 K0）
 
     // ----- 其它操作 -----
     public const ushort CmdFindDevice        = 0x0435;  // 查找设备（旧 0x35 系）
@@ -259,6 +263,8 @@ public static class OppoProtocol
     // ===== 载荷构造（供传输层 Send(cmd, payload)；帧封装交给 IFrameCodec）=====
     public static readonly byte[] PayEmpty = { };
     public static readonly byte[] PayQueryAnc = { 0x01, 0x01 };
+    /// <summary>查询智能切换实时档位（官方 PollCommandManager.q：0x10C + [0x04,0x01]，响应 subType=4=IntelligentNoiseModeInfo）。</summary>
+    public static readonly byte[] PayQueryAncIntelligent = { 0x04, 0x01 };
     public static readonly byte[] PayRegisterNotify = { 0x01, 0x01, 0x02, 0x02 };
     public static readonly byte[] PayRegisterWear = { 0x02, 0x02 };
     public static readonly byte[] PayBatchQuery = { 0x0B, 0x05, 0x04, 0x0B, 0x11, 0x13, 0x18, 0x06, 0x1B, 0x1C, 0x27, 0x28 };
@@ -360,6 +366,28 @@ public static class OppoProtocol
         if (n <= 0 || payload.Length < 2 + 2) return -1;
         return payload[3];   // [id][val] 首对的 val 即当前 codec
     }
+
+    /// <summary>
+    /// 解析空间音频三模式查询响应（0x812A，官方 getHeadsetSpatialType）。
+    /// 格式：[status(1)][spatialType(1)]，status!=0 或长度不足视为无效（返回 -1）。
+    /// 对齐官方 PollCommandManager.D 的 0x812a 分支：状态非 0 报错、长度<=1 视为无效、
+    /// 否则取 data[1] 作为 spatialType，经 MSG_RECEIVE_HEADSET_SPATIAL_TYPE_EVENT 上抛。
+    /// spatialType：0=Off 1=Fixed 2=Track（与 0x0422 SET 载荷编码一致）。
+    /// </summary>
+    public static int ParseHeadsetSpatialType(byte[] payload)
+    {
+        if (payload == null || payload.Length <= 1) return -1;
+        if (payload[0] != 0) return -1;   // status 非 0 = 失败
+        return payload[1];
+    }
+
+    /// <summary>空间音频 spatialType 值 → 模式名（0=Off 1=Fixed 2=Track）。</summary>
+    public static string SpatialTypeToName(int type) => type switch
+    {
+        1 => "Fixed",
+        2 => "Track",
+        _ => "Off",
+    };
 
     /// <summary>
     /// 解析 0x8103 响应载荷，返回 6 位大写十六进制 productId（匹配 JSON id），失败返回 null。

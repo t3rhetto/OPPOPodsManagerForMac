@@ -39,7 +39,21 @@ public class DeviceCapabilities
     public bool HasDualDevice { get; set; }         // feature 0x11 双设备连接
     public bool HasAdaptiveAnc { get; set; }        // ANC 子模式（Smart/Light/Medium/Deep）
     public bool IsLegacyAnc { get; set; }           // noiseReductionMode 无子模式且 ANC On 在异常位置时启用值交换
-    public bool HasGameMode { get; set; }           // 由 JSON gameSoundList 推导
+    public bool HasGameMode { get; set; }           // 游戏模式（低延迟，feature 0x28 走 0x403）
+    public bool HasGameSound { get; set; }           // 游戏音效（cmd 0x423，由 JSON gameSoundList 推导）
+    public byte GameSoundType { get; set; }          // 游戏音效开启时发送的 type（gameSoundList 里首个非 0 类型）
+
+    /// <summary>
+    /// 游戏音效互斥组（JSON gameSoundMutexes，官方 GameSoundMutexHelper）。
+    /// 值语义：1=调音(EQ) 2=空间音效 3=EQ相关 4=自适应听感。
+    /// 表示"游戏音效强化"与这些功能同一时刻只能开一个（设备固件强制）。
+    /// </summary>
+    public HashSet<int> GameSoundMutexes { get; set; } = new();
+
+    /// <summary>游戏音效是否与 EQ 调音互斥（mutex 含 1 或 3）。</summary>
+    public bool GameSoundMutexEq => GameSoundMutexes.Contains(1) || GameSoundMutexes.Contains(3);
+    /// <summary>游戏音效是否与空间音效互斥（mutex 含 2）。</summary>
+    public bool GameSoundMutexSpatial => GameSoundMutexes.Contains(2);
 
     // ========== EQ 预设 ==========
     public Dictionary<string, byte> EqPresets { get; set; } = new();
@@ -200,10 +214,28 @@ public class DeviceCapabilities
         if (func.TryGetProperty("multiDevicesConnect", out var mdc))
             caps.HasDualDevice = mdc.GetInt32() >= 1;
 
-        // gameSoundList 非空 → 游戏模式（官方需 cap(0x423) + 该列表）
+        // gameSoundList 非空 → 游戏模式 + 游戏音效（官方需 cap(0x423) + 该列表）
+        // 列表项如 [{type:3},{type:0}]：type 0 = 关闭/普通，非 0 = 具体游戏音效类型。
         if (func.TryGetProperty("gameSoundList", out var gsl) && gsl.ValueKind == JsonValueKind.Array)
         {
             foreach (var _ in gsl.EnumerateArray()) { caps.HasGameMode = true; break; }
+            // 游戏音效：取首个非 0 type 作为"开启"时发送的类型
+            foreach (var item in gsl.EnumerateArray())
+            {
+                if (item.TryGetProperty("type", out var t) && t.ValueKind == JsonValueKind.Number)
+                {
+                    int tv = t.GetInt32();
+                    if (tv != 0) { caps.HasGameSound = true; caps.GameSoundType = (byte)tv; break; }
+                }
+            }
+        }
+
+        // gameSoundMutexes → 游戏音效互斥组（与调音/空间音效等互斥，官方 GameSoundMutexHelper）
+        if (func.TryGetProperty("gameSoundMutexes", out var gsm) && gsm.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var m in gsm.EnumerateArray())
+                if (m.ValueKind == JsonValueKind.Number)
+                    caps.GameSoundMutexes.Add(m.GetInt32());
         }
 
         // noiseReductionMode 有 childrenMode → 自适应降噪子模式

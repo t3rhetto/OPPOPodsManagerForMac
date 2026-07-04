@@ -58,6 +58,14 @@ public class PodManager : IPodManager
         });
     }
 
+    /// <summary>
+    /// 功能开关发送（空间音效/游戏/双设备）。官方 HeadsetCoreService.a1：
+    /// 统一用命令 0x403 + [feature][enable]，兼容 BR/EDR 与 LE Audio 传输（同一命令）。
+    /// 该命令属通用功能开关，各功能靠 feature 字节区分，不存在新旧命令切换。
+    /// </summary>
+    private void SendFeatureSwitch(byte feature, bool on, string label)
+        => SendSet(OppoProtocol.CmdSetFeature, OppoProtocol.FeaturePayload(feature, on), label);
+
     // 命令分发器（官方式超时/重试/请求-响应配对，对齐 PacketTimeoutProcessor）
     private readonly PacketDispatcher _dispatcher;
 
@@ -94,8 +102,13 @@ public class PodManager : IPodManager
             _deviceCaps.Add(OppoProtocol.CmdEqResp);
             _deviceCaps.Add(OppoProtocol.CmdEqNotify);
         }
-        // 空间音频三模式
-        if (Caps.HasSpatialAudio) _deviceCaps.Add(OppoProtocol.CmdSpatialAudio);
+        // 空间音频三模式：设置命令 0x0422 + 状态回读查询 0x012A（官方 getHeadsetSpatialType）
+        if (Caps.HasSpatialAudio)
+        {
+            _deviceCaps.Add(OppoProtocol.CmdSpatialAudio);
+            _deviceCaps.Add(OppoProtocol.CmdQueryHeadsetSpatial);
+            _deviceCaps.Add(OppoProtocol.CmdHeadsetSpatialResp);
+        }
         // 双设备连接：多连接列表查询 + 切换活动设备
         if (Caps.HasDualDevice)
         {
@@ -103,9 +116,17 @@ public class PodManager : IPodManager
             _deviceCaps.Add(OppoProtocol.CmdMultiConnectResp);
             _deviceCaps.Add(OppoProtocol.CmdOperateHandheld);
         }
-        // 功能开关（空间音效/游戏/双设备）走通用 SetFeature，只要有任一功能即允许
+        // 功能开关（空间音效/游戏/双设备）：官方 HeadsetCoreService.a1 用通用命令 0x403
+        // ([feature][enable])，兼 BR/EDR 与 LE Audio（0x1f 只切日志标签，命令不变）。
+        // 0x423 是"游戏音效类型"等专用功能的独立命令，不是 0x403 的替代路径。
         if (Caps.HasSpatialSound || Caps.HasGameMode || Caps.HasDualDevice)
-            _deviceCaps.Add(OppoProtocol.CmdSetFeature);
+            _deviceCaps.Add(OppoProtocol.CmdSetFeature);        // 0x403 通用功能开关
+        // 游戏音效：设置命令 0x423（setGameSoundTypeEnable）+ 查询命令 0x12B（GameSoundInfo）
+        if (Caps.HasGameSound)
+        {
+            _deviceCaps.Add(OppoProtocol.CmdSetFeatureSwitch);
+            _deviceCaps.Add(OppoProtocol.CmdQueryGameSound);
+        }
         // 编解码器查询：受支持型号普遍可用（有响应则解析，无响应超时丢弃，无副作用）
         if (Caps.IsSupported)
             _deviceCaps.Add(OppoProtocol.CmdQueryCodecType);
@@ -113,6 +134,9 @@ public class PodManager : IPodManager
 
     /// <summary>命令能力判定（官方 ProtocolManager.c）：全局通用集 或 每设备集 命中才可发。</summary>
     private bool Supports(ushort cmd) => GlobalCaps.Contains(cmd) || _deviceCaps.Contains(cmd);
+
+    /// <summary>该型号是否有"智能切换"档位（有则需额外查询实时档位 [0x03,0x01]）。</summary>
+    private bool HasSmartMode() => Caps.AncNameToIndex.ContainsKey("Smart");
 
     /// <summary>能力门控的发送：不支持则拦截并记日志（对齐官方"UNSUPPORTED cmd=0x..."）。</summary>
     private bool TrySend(ushort cmd, byte[] payload)
@@ -161,6 +185,32 @@ public class PodManager : IPodManager
                 var payload = Slice(p, 0, len);
                 int codec = OppoProtocol.ParseCodecType(payload);
                 if (codec >= 0) { State.CodecType = codec; Log.D("RFCOMM", $"编解码器={codec}"); StateChanged?.Invoke(); }
+                break;
+            }
+            case OppoProtocol.CmdHeadsetSpatialResp:  // 0x812A 空间音频三模式当前值
+            {
+                int type = OppoProtocol.ParseHeadsetSpatialType(p);
+                if (type >= 0)
+                {
+                    State.SpatialMode = OppoProtocol.SpatialTypeToName(type);
+                    Log.D("RFCOMM", $"空间音频三模式={State.SpatialMode}(type={type})");
+                    StateChanged?.Invoke();
+                }
+                break;
+            }
+            case (ushort)(OppoProtocol.CmdQueryGameSound | 0x8000):  // 0x812B 游戏音效信息
+            {
+                // 响应 [status(1)][selectType(1)][count(1)][supportTypes...]。
+                // 官方一致语义（HearingOptimizeItem.isSelectGameSound / GameSetFragment）：
+                // selectType != 0 → 游戏音效已开启（selectType 即当前生效音效 type，如 3）；
+                // selectType == 0 → 关闭（gameSoundList 里的 {type:0} 即"关闭"项）。
+                if (len >= 2 && p[0] == 0x00)
+                {
+                    byte selectType = p[1];
+                    State.GameSound = selectType != 0;
+                    Log.D("RFCOMM", $"游戏音效 selectType={selectType} -> {State.GameSound}");
+                    StateChanged?.Invoke();
+                }
                 break;
             }
 
@@ -240,10 +290,20 @@ public class PodManager : IPodManager
             Thread.Sleep(80);
             TrySend(OppoProtocol.CmdQueryAnc, OppoProtocol.PayQueryAnc);
             Thread.Sleep(80);
+            if (HasSmartMode()) { TrySend(OppoProtocol.CmdQueryAnc, OppoProtocol.PayQueryAncIntelligent); Thread.Sleep(80); }
             TrySend(OppoProtocol.CmdQueryEq, OppoProtocol.PayEmpty);
             Thread.Sleep(80);
             TrySend(OppoProtocol.CmdQueryCodecType, OppoProtocol.PayEmpty);
             Thread.Sleep(80);
+            TrySend(OppoProtocol.CmdQueryGameSound, OppoProtocol.PayEmpty);  // 游戏音效当前状态
+            Thread.Sleep(80);
+            // 空间音频三模式当前值：仅三模式（headsetSpatialType）机型才有 0x012A，
+            // 两模式开关型机型走 feature 0x1B（批量查询）已覆盖，不发以免无谓拦截日志。
+            if (Caps.HasSpatialAudio)
+            {
+                TrySend(OppoProtocol.CmdQueryHeadsetSpatial, OppoProtocol.PayEmpty);
+                Thread.Sleep(80);
+            }
 
             // ===== 阶段4：注册主动通知（电池/佩戴）=====
             _transport.Send(OppoProtocol.CmdRegisterNotify, OppoProtocol.PayRegisterNotify);
@@ -301,28 +361,92 @@ public class PodManager : IPodManager
     public void SendSpatial(bool on)
     {
         Log.D("RFCOMM", $"SendSpatial on={on}");
-        SendSet(OppoProtocol.CmdSetFeature, OppoProtocol.FeaturePayload(OppoProtocol.FeatureSpatial, on), "空间音效");
+        SendFeatureSwitch(OppoProtocol.FeatureSpatial, on, "空间音效");
     }
 
     public void SendSpatialAudio(string mode)
     {
         Log.D("RFCOMM", $"SendSpatialAudio mode={mode}");
+        // 空间音频三模式是独立命令 0x0422（非功能开关），保持原路径
         SendSet(OppoProtocol.CmdSpatialAudio, OppoProtocol.SpatialPayload(mode), $"空间音频 {mode}");
     }
 
     public void SendDualDevice(bool on)
     {
         Log.D("RFCOMM", $"SendDualDevice on={on}");
-        SendSet(OppoProtocol.CmdSetFeature, OppoProtocol.FeaturePayload(OppoProtocol.FeatureDualDevice, on), "双设备连接");
+        SendFeatureSwitch(OppoProtocol.FeatureDualDevice, on, "双设备连接");
     }
 
     public void SendGameMode(bool on, bool compatible = false)
     {
         Log.D("RFCOMM", $"SendGameMode on={on} compatible={compatible}");
-        SendSet(OppoProtocol.CmdSetFeature, OppoProtocol.FeaturePayload(OppoProtocol.FeatureGameMain, on), "游戏模式");
-        if (compatible && Supports(OppoProtocol.CmdSetFeature))
-            _transport.Send(OppoProtocol.CmdSetFeature, OppoProtocol.FeaturePayload(OppoProtocol.FeatureGameLL, on));
+        SendFeatureSwitch(OppoProtocol.FeatureGameMain, on, "游戏模式");
+        // 兼容实现：部分设备游戏低延迟需额外发 feature 0x06
+        if (compatible)
+            SendFeatureSwitch(OppoProtocol.FeatureGameLL, on, "游戏低延迟");
     }
+
+    /// <summary>
+    /// 游戏音效开关（官方 setGameSoundTypeEnable，命令 0x423 + [type][enable]）。
+    /// 关键：官方"关闭"不是发 enable=0，而是【选择 type 0】（gameSoundList 里的 {type:0} 即"关闭"项），
+    /// 且 enable 恒为 1（GameSetViewModel.h → E8/a.d(addr, type, true)）。
+    /// 开关状态由设备回读的 selectType 决定：selectType != 0 = 开、== 0 = 关。
+    /// 故：开 → [GameSoundType, 1]；关 → [0, 1]。若发 [GameSoundType, 0]，设备 selectType 仍保留原 type，
+    /// 会被回读判为"仍开启"（本次 bug 根因）。
+    /// </summary>
+    public void SendGameSound(bool on)
+    {
+        byte type = on ? Caps.GameSoundType : (byte)0x00;
+        Log.D("RFCOMM", $"SendGameSound on={on} type={type}");
+        SendSet(OppoProtocol.CmdSetFeatureSwitch,
+                OppoProtocol.FeatureSwitchPayload(type, true), "游戏音效");
+    }
+
+    /// <summary>
+    /// 音效增强互斥组当前生效项（对齐官方 GameSoundMutexHelper：游戏音效 ↔ 调音 ↔ 空间音效互斥）。
+    /// 从设备回读状态推导；无互斥组或都关时为 None。
+    /// </summary>
+    public AudioEnhancement CurrentEnhancement()
+    {
+        if (State.GameSound) return AudioEnhancement.GameSound;
+        if (Caps.GameSoundMutexSpatial && State.SpatialSound) return AudioEnhancement.SpatialSound;
+        // EQ 视为"调音"生效：有非默认预设即算（EQ 总有值，故仅在与游戏音效互斥的型号上作为一员）
+        return AudioEnhancement.None;
+    }
+
+    /// <summary>
+    /// 设置音效增强（互斥组单选，静默切换）。选一项 → 只发该项 enable，
+    /// 设备固件自动关掉互斥的其它项（对齐官方，不重复下发关闭命令）。
+    /// mode=None 时关闭游戏音效（其它项本就是"开一个关其它"，无独立关闭语义）。
+    /// </summary>
+    public void SetAudioEnhancement(AudioEnhancement mode, string? eqName = null)
+    {
+        Log.D("RFCOMM", $"SetAudioEnhancement -> {mode} eq={eqName}");
+        _featureUserSetAtProxy();
+        switch (mode)
+        {
+            case AudioEnhancement.GameSound:
+                SendGameSound(true);
+                break;
+            case AudioEnhancement.SpatialSound:
+                // 开空间音效开关；设备会关游戏音效（互斥）
+                SendSpatial(true);
+                break;
+            case AudioEnhancement.Eq:
+                // 选调音 = 应用某个 EQ 预设；设备会关游戏音效（互斥）
+                if (!string.IsNullOrEmpty(eqName)) SendEq(eqName!);
+                break;
+            case AudioEnhancement.None:
+                // 关闭：显式关游戏音效（EQ/空间音效无"全关"单命令，交给各自控件）
+                if (State.GameSound) SendGameSound(false);
+                break;
+        }
+    }
+
+    // 供 SetAudioEnhancement 复用 UI 的"用户刚操作"时间戳抑制回读覆盖（由构造注入或空实现）
+    private Action _featureUserSetAtProxy = () => { };
+    /// <summary>UI 可注入：标记"刚由用户设置"，避免轮询回读在短时间内覆盖选择。</summary>
+    public void SetFeatureUserSetHook(Action hook) => _featureUserSetAtProxy = hook ?? (() => { });
 
     public void SendEq(string name)
     {
@@ -390,6 +514,21 @@ public class PodManager : IPodManager
 
     private void ParseAnc(byte[] pkt, int start, int len)
     {
+        // 0x810C 响应格式：[byte0][subType][mType][bitmap...]。subType=data[1]（官方 o.D 分发）：
+        //   1 = CurrentNoiseModeInfo（手动档位，msg 0x17）
+        //   2/3 = NoiseReductionInfo（旧版，msg 0x14/0x1f）
+        //   4 = IntelligentNoiseModeInfo（智能实时档位，msg 0x2c）← 由 [0x04,0x01] 查询触发
+        // 位图从 mType(data[2]) 起，首个置位 bit = 设备实时算出的档位；位图全 0 表示当前无实时档位。
+        if (len >= 5 && pkt[start + 1] == 0x04)
+        {
+            var rt = ParseNoiseBitmap(pkt, start + 2, len - 2);   // 从 mType 起
+            // 有实时档位（如深度/中度/轻度）才记；空位图表示设备暂未算出，清空提示。
+            State.IntelligentRealtime = (rt != null && rt != "Smart") ? rt : "";
+            Log.D("RFCOMM", $"ParseAnc: 智能实时(查询) -> {(string.IsNullOrEmpty(State.IntelligentRealtime) ? "(无)" : State.IntelligentRealtime)}");
+            StateChanged?.Invoke();
+            return;   // 主档位由手动查询(subType=1)响应设置，这里只管实时档位
+        }
+
         for (int i = 0; i + 3 < len; i++)
         {
             if (pkt[start + i] == 0x01 && pkt[start + i + 1] == 0x01)
@@ -689,6 +828,12 @@ public class PodManager : IPodManager
                     Thread.Sleep(100);
                     TrySend(OppoProtocol.CmdQueryAnc, OppoProtocol.PayQueryAnc);
                     Thread.Sleep(100);
+                    // 智能切换档位需单独查询（官方 [0x03,0x01]），拿设备实时计算档位
+                    if (HasSmartMode())
+                    {
+                        TrySend(OppoProtocol.CmdQueryAnc, OppoProtocol.PayQueryAncIntelligent);
+                        Thread.Sleep(100);
+                    }
                     _transport.Poll(500);
                     tick++;
 
@@ -705,6 +850,18 @@ public class PodManager : IPodManager
                         _transport.Send(OppoProtocol.CmdBatchQuery, OppoProtocol.PayBatchQuery);
                         Thread.Sleep(100);
                         _transport.Poll(400);
+
+                        if (TrySend(OppoProtocol.CmdQueryGameSound, OppoProtocol.PayEmpty))
+                        {
+                            Thread.Sleep(100);
+                            _transport.Poll(400);
+                        }
+
+                        if (Caps.HasSpatialAudio && TrySend(OppoProtocol.CmdQueryHeadsetSpatial, OppoProtocol.PayEmpty))
+                        {
+                            Thread.Sleep(100);
+                            _transport.Poll(400);
+                        }
 
                         _transport.Send(OppoProtocol.CmdRegisterNotify, OppoProtocol.PayRegisterNotify);
                         Thread.Sleep(100);

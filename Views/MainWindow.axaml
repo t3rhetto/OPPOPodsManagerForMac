@@ -3,7 +3,7 @@
                  xmlns:suki="https://github.com/kikipoulet/SukiUI"
                  xmlns:local="using:OppoPodsManager"
                  x:Class="OppoPodsManager.MainWindow"
-                 Title="OPPO Pods For Windows" Height="706" Width="460"
+                 Title="OPPO Pods For Windows" Height="741" Width="460"
                  WindowStartupLocation="CenterScreen"
                  CanMinimize="True" CanMaximize="True" CanPin="False" CanFullScreen="False">
 
@@ -102,6 +102,7 @@
                     <WrapPanel HorizontalAlignment="Center">
                         <CheckBox x:Name="CbSpatial" Content="空间音效" Margin="4" IsVisible="False"/>
                         <CheckBox x:Name="CbGame" Content="游戏模式" Margin="4"/>
+                        <CheckBox x:Name="CbGameSound" Content="游戏音效" Margin="4" IsVisible="False"/>
                     </WrapPanel>
                     <CheckBox x:Name="CbDualDevice" Content="双设备连接" Margin="4" HorizontalAlignment="Center"
                               IsVisible="False"/>
