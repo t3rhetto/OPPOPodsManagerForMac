@@ -6,7 +6,7 @@ namespace OppoPodsManager;
 
 /// <summary>
 /// 前后端契约（防火墙）：前端只依赖本接口与其暴露的数据结构。
-/// 后端（RfcommService + Transport/Protocol）可任意重构内部逻辑，
+/// 后端（PodManager + Transport/Protocol）可任意重构内部逻辑，
 /// 只要本接口签名与下列数据结构不变，前端界面无需改动；反之前端改界面也不影响后端。
 ///
 /// 契约数据结构（改这些字段=破坏契约，需前后端同步）：
@@ -30,6 +30,9 @@ public interface IPodManager : IDisposable
 
     /// <summary>状态变化通知（后端线程触发，UI 需自行 marshal 到 UI 线程）。</summary>
     event Action? StateChanged;
+
+    /// <summary>设置类命令失败/超时通知（参数为可读描述，供 UI 提示）。后端线程触发。</summary>
+    event Action<string>? CommandFailed;
 
     /// <summary>建立连接（内部完成设备发现 + 初始化握手）。</summary>
     Task ConnectAsync();

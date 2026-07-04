@@ -63,10 +63,17 @@ file static class AssetHelper
 public partial class MainWindow : SukiWindow
 {
     // 前端只依赖 IPodManager 契约；构造点耦合具体类，其余交互全走接口
-    private readonly IPodManager _rfcomm = new RfcommService();
+    private readonly IPodManager _pods = new PodManager();
     private CancellationTokenSource? _pollCts;
     private string _ancMain = "", _ancLevel = "";
     private DateTime _ancUserSetAt = DateTime.MinValue;
+
+    // ANC 动态 UI（按 JSON 生成）：键 → (按钮, 背景边框)
+    private readonly Dictionary<string, (Button btn, Border bg)> _ancMainButtons = new();
+    private readonly Dictionary<string, (Button btn, Border bg)> _ancSubButtons = new();
+    private readonly Dictionary<string, string> _ancChildToMain = new();  // 子模式键 → 所属主模式键
+    private List<AncOption> _ancOptions = new();                          // 当前型号的 ANC 选项
+    private string _ancBuiltForModel = "";                               // 已构建 UI 的型号（避免重复重建）
     private DateTime _featureUserSetAt = DateTime.MinValue;
     private WindowIcon? _iconConnected, _iconDisconnected;
     private TrayIcon? _trayIcon;
@@ -161,7 +168,7 @@ public partial class MainWindow : SukiWindow
         if (rightBmp != null) RightImage.Source = rightBmp;
 
         // 先填充默认 EQ 列表
-        foreach (var kv in _rfcomm.Caps.EqPresets) CbEq.Items.Add(kv.Key);
+        foreach (var kv in _pods.Caps.EqPresets) CbEq.Items.Add(kv.Key);
         CbTray.IsChecked = SettingsManager.GetBool("TrayEnabled", false);
         CbAuto.IsChecked = SettingsManager.GetBool("AutoStart", false);
 
@@ -206,10 +213,10 @@ public partial class MainWindow : SukiWindow
         TbCustomName.Text = customName ?? "";
         UpdateTitle();
 
-        _rfcomm.StateChanged += OnStateChanged;
-        _rfcomm.StateChanged += () => Dispatcher.UIThread.Post(() => SyncMultiDeviceList());
+        _pods.StateChanged += OnStateChanged;
+        _pods.StateChanged += () => Dispatcher.UIThread.Post(() => SyncMultiDeviceList());
         Closing += OnWindowClosing;
-        Closed += (_, _) => { _pollCts?.Cancel(); _rfcomm.Dispose(); };
+        Closed += (_, _) => { _pollCts?.Cancel(); _pods.Dispose(); };
         _ = ConnectAsync();
         }
         catch (Exception ex)
@@ -224,17 +231,17 @@ public partial class MainWindow : SukiWindow
         while (!_realClose)
         {
             Log.D("UI", "ConnectAsync: 尝试连接");
-            await _rfcomm.ConnectAsync();
-            if (_rfcomm.IsConnected)
+            await _pods.ConnectAsync();
+            if (_pods.IsConnected)
             {
                 Log.D("UI", "ConnectAsync: 已连接,进入轮询");
                 _pollCts = new CancellationTokenSource();
-                await _rfcomm.PollAsync(_pollCts.Token);
+                await _pods.PollAsync(_pollCts.Token);
                 Log.D("UI", "ConnectAsync: 轮询结束");
             }
             else
             {
-                Log.D("UI", "ConnectAsync: 连接失败 -> " + (_rfcomm.LastError ?? "unknown"));
+                Log.D("UI", "ConnectAsync: 连接失败 -> " + (_pods.LastError ?? "unknown"));
             }
             _ = Dispatcher.UIThread.InvokeAsync(() => OnStateChanged());
             if (!_realClose) { Log.D("UI", "ConnectAsync: 5s 后重试"); await Task.Delay(5000); }
@@ -245,10 +252,10 @@ public partial class MainWindow : SukiWindow
     {
         try
         {
-            var s = _rfcomm.State;
+            var s = _pods.State;
             var caps = _modelOverride != null
                 ? DeviceCapabilities.ForceModel(_modelOverride)
-                : _rfcomm.Caps;
+                : _pods.Caps;
 
             if (s.Connected)
         {
@@ -273,7 +280,7 @@ public partial class MainWindow : SukiWindow
             _criticalBatteryAlerted = false;
 
             StatusDot.Fill = BrushRed;
-            var err = _rfcomm.LastError;
+            var err = _pods.LastError;
             StatusText.Text = err ?? "未连接";
             StatusText.Foreground = BrushLightRed;
             BtnReconnect.IsVisible = true;
@@ -332,17 +339,19 @@ public partial class MainWindow : SukiWindow
         WearStatus.IsVisible = wearParts.Count > 0;
 
         if (s.AncMode is not "?" && (DateTime.Now - _ancUserSetAt).TotalSeconds > 3)
+            SyncAncFromState(s.AncMode);
+        HighlightAnc();
+
+        // 智能切换：显示设备实时计算出的档位（如"实时：深度"）
+        if (_ancMain == "Smart" && !string.IsNullOrEmpty(s.IntelligentRealtime))
         {
-            if (s.AncMode is "Off" or "Adaptive" or "Transparency")
-            { _ancMain = s.AncMode; AncSub.IsVisible = false; }
-            else if (s.AncMode is "Smart" or "Light" or "Medium" or "Deep")
-            {
-                _ancMain = "Smart";
-                if (string.IsNullOrEmpty(_ancLevel)) _ancLevel = s.AncMode;
-                AncSub.IsVisible = true;
-            }
+            AncRealtimeHint.Text = $"实时计算：{AncModeLabel(s.IntelligentRealtime)}";
+            AncRealtimeHint.IsVisible = true;
         }
-        Highlight();
+        else
+        {
+            AncRealtimeHint.IsVisible = false;
+        }
 
         if (s.EqPreset != "?" && CbEq.SelectedItem == null) CbEq.SelectedItem = s.EqPreset;
         if ((DateTime.Now - _featureUserSetAt).TotalSeconds > 3)
@@ -352,10 +361,12 @@ public partial class MainWindow : SukiWindow
             if (s.DualDevice != _prevDualDevice) { _prevDualDevice = s.DualDevice; CbDualDevice.IsChecked = s.DualDevice; }
         }
 
+        BuildAncUi(caps);
+        AncPanel.IsVisible = caps.AncOptions.Count > 0;
         SpatialAudioPanel.IsVisible = caps.HasSpatialAudio;
         CbSpatial.IsVisible = caps.HasSpatialSound;
         CbDualDevice.IsVisible = caps.HasDualDevice;
-        BtnAdaptive.IsVisible = caps.HasAdaptiveAnc;
+        DevicePanel.IsVisible = caps.HasDualDevice;
         CbGame.IsVisible = caps.HasGameMode;
 
         ModelNote.Text = $"当前自动识别: {caps.ModelName}";
@@ -393,106 +404,243 @@ public partial class MainWindow : SukiWindow
         catch { }
     }
 
-    private void Highlight()
+    /// <summary>按当前型号 caps.AncOptions 动态生成主/子模式按钮（型号不变则跳过重建）。</summary>
+    private void BuildAncUi(DeviceCapabilities caps)
     {
-        var btns = new[] {
-            (BtnSmart, BgSmart, "Smart"), (BtnAdaptive, BgAdaptive, "Adaptive"),
-            (BtnTrans, BgTrans, "Transparency"), (BtnOff, BgOff, "Off") };
-        foreach (var (btn, bg, tag) in btns)
+        var modelKey = caps.ModelId + "|" + caps.ModelName;
+        if (_ancBuiltForModel == modelKey) return;
+        _ancBuiltForModel = modelKey;
+        _ancOptions = caps.AncOptions;
+
+        _ancMainButtons.Clear();
+        _ancChildToMain.Clear();
+        AncMainRow.Children.Clear();
+        AncMainRow.ColumnDefinitions.Clear();
+        AncSubRow.Children.Clear();
+        AncSubRow.ColumnDefinitions.Clear();
+        _ancSubButtons.Clear();
+        AncSub.IsVisible = false;
+
+        int col = 0;
+        for (int i = 0; i < _ancOptions.Count; i++)
         {
-            var active = !string.IsNullOrEmpty(_ancMain) && tag == _ancMain;
+            var opt = _ancOptions[i];
+            if (i > 0) AddSeparator(AncMainRow, ref col);
+            var corner = FirstLast(i, _ancOptions.Count, 6);
+            var (btn, bg) = MakeSegButton(opt.Label, opt, 90, 36, 14, corner, AncMain_Click);
+            AddToRow(AncMainRow, bg, ref col);
+            _ancMainButtons[opt.Key] = (btn, bg);
+
+            foreach (var child in opt.Children)
+                _ancChildToMain[child.Key] = opt.Key;
+        }
+        HighlightAnc();
+    }
+
+    /// <summary>填充子模式行（某容器主模式的 Children）。</summary>
+    private void PopulateAncSub(AncOption container)
+    {
+        AncSubRow.Children.Clear();
+        AncSubRow.ColumnDefinitions.Clear();
+        _ancSubButtons.Clear();
+
+        int col = 0;
+        for (int i = 0; i < container.Children.Count; i++)
+        {
+            var child = container.Children[i];
+            if (i > 0) AddSeparator(AncSubRow, ref col);
+            var corner = FirstLast(i, container.Children.Count, 5);
+            var (btn, bg) = MakeSegButton(child.Label, child, 72, 28, 13, corner, AncSub_Click);
+            AddToRow(AncSubRow, bg, ref col);
+            _ancSubButtons[child.Key] = (btn, bg);
+        }
+    }
+
+    private (Button, Border) MakeSegButton(string label, AncOption opt, int w, int h, int fontSize, CornerRadius corner, EventHandler<Avalonia.Interactivity.RoutedEventArgs> onClick)
+    {
+        var btn = new Button
+        {
+            Content = label, Tag = opt, Width = w, Height = h,
+            BorderThickness = new Thickness(0), Padding = new Thickness(0),
+            Background = BrushTransparent, Focusable = false,
+            Foreground = BrushGray, FontSize = fontSize
+        };
+        btn.Click += onClick;
+        var bg = new Border { CornerRadius = corner, Padding = new Thickness(0), Background = BrushTransparent, Child = btn };
+        return (btn, bg);
+    }
+
+    private void AddToRow(Grid row, Control c, ref int col)
+    {
+        row.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
+        Grid.SetColumn(c, col);
+        row.Children.Add(c);
+        col++;
+    }
+
+    private void AddSeparator(Grid row, ref int col)
+    {
+        row.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
+        var sep = new Border { Width = 1, Background = BrushGray, Opacity = 0.3 };
+        Grid.SetColumn(sep, col);
+        row.Children.Add(sep);
+        col++;
+    }
+
+    private static CornerRadius FirstLast(int i, int count, double r)
+    {
+        if (count == 1) return new CornerRadius(r);
+        if (i == 0) return new CornerRadius(r, 0, 0, r);
+        if (i == count - 1) return new CornerRadius(0, r, r, 0);
+        return new CornerRadius(0);
+    }
+
+    private void HighlightAnc()
+    {
+        foreach (var (key, (btn, bg)) in _ancMainButtons)
+        {
+            var active = key == _ancMain;
             bg.Background = active ? BrushAccent : BrushTransparent;
             btn.Foreground = active ? BrushWhite : BrushGray;
         }
-
-        var subBtns = new[] {
-            (BtnAncSmart, BgAncSmart, "Smart"), (BtnAncLight, BgAncLight, "Light"),
-            (BtnAncMedium, BgAncMedium, "Medium"), (BtnAncDeep, BgAncDeep, "Deep") };
-        foreach (var (btn, bg, tag) in subBtns)
+        foreach (var (key, (btn, bg)) in _ancSubButtons)
         {
-            var active = !string.IsNullOrEmpty(_ancLevel) && tag == _ancLevel;
+            var active = key == _ancLevel;
             bg.Background = active ? BrushAccent : BrushTransparent;
             btn.Foreground = active ? BrushWhite : BrushGray;
         }
     }
 
-    private void SwitchAncMain(string mode)
+    private void SwitchAncMain(AncOption opt)
     {
-        if (!_rfcomm.IsConnected) return;
-        Log.D("UI", $"用户操作: ANC 主模式 -> {mode}");
+        if (!_pods.IsConnected) return;
+        Log.D("UI", $"用户操作: ANC 主模式 -> {opt.Key}");
         _ancUserSetAt = DateTime.Now;
-        _ancMain = mode;
-        AncSub.IsVisible = (mode == "Smart");
-        if (mode != "Smart") _ancLevel = "";
-        _rfcomm.SendAnc(mode);
-        Highlight();
+        _ancMain = opt.Key;
+
+        if (opt.Children.Count > 0)
+        {
+            // 容器型：展开子模式，默认选第一个（或保留上次子级别）
+            PopulateAncSub(opt);
+            AncSub.IsVisible = true;
+            var target = opt.Children.Any(c => c.Key == _ancLevel) ? _ancLevel : opt.Children[0].Key;
+            _ancLevel = target;
+            _pods.SendAnc(target);
+        }
+        else
+        {
+            // 叶子型：直接发送，收起子模式
+            AncSub.IsVisible = false;
+            _ancLevel = "";
+            _pods.SendAnc(opt.Key);
+        }
+        HighlightAnc();
     }
 
-    private void SwitchAncSub(string mode)
+    private void SwitchAncSub(AncOption opt)
     {
-        if (!_rfcomm.IsConnected) return;
-        Log.D("UI", $"用户操作: ANC 子级别 -> {mode}");
+        if (!_pods.IsConnected) return;
+        Log.D("UI", $"用户操作: ANC 子级别 -> {opt.Key}");
         _ancUserSetAt = DateTime.Now;
-        _ancLevel = mode;
-        _rfcomm.SendAnc(mode);
-        Highlight();
+        _ancLevel = opt.Key;
+        _pods.SendAnc(opt.Key);
+        HighlightAnc();
     }
 
     private void AncMain_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (s is Button btn && btn.Tag is string tag) SwitchAncMain(tag);
+        if (s is Button btn && btn.Tag is AncOption opt) SwitchAncMain(opt);
     }
 
     private void AncSub_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (s is Button btn && btn.Tag is string tag) SwitchAncSub(tag);
+        if (s is Button btn && btn.Tag is AncOption opt) SwitchAncSub(opt);
+    }
+
+    /// <summary>模式键 → 中文显示名（从当前型号 AncOptions 里查主模式或子模式的 Label）。</summary>
+    private string AncModeLabel(string key)
+    {
+        foreach (var o in _ancOptions)
+        {
+            if (o.Key == key) return o.Label;
+            foreach (var c in o.Children)
+                if (c.Key == key) return c.Label;
+        }
+        return key;
+    }
+
+    /// <summary>把设备上报的 ANC 模式键映射到 UI 主/子选中态（完全按当前型号选项模型）。</summary>
+    private void SyncAncFromState(string modeKey)
+    {
+        // 1) 是某个主模式（叶子）？直接选中，收起子行
+        var mainOpt = _ancOptions.FirstOrDefault(o => o.Key == modeKey && o.Children.Count == 0);
+        if (mainOpt != null)
+        {
+            _ancMain = modeKey;
+            _ancLevel = "";
+            AncSub.IsVisible = false;
+            return;
+        }
+
+        // 2) 是某容器主模式的子模式？选中其父，展开子行并选中该子模式
+        if (_ancChildToMain.TryGetValue(modeKey, out var parentKey))
+        {
+            var container = _ancOptions.FirstOrDefault(o => o.Key == parentKey);
+            if (container != null)
+            {
+                _ancMain = parentKey;
+                _ancLevel = modeKey;
+                PopulateAncSub(container);
+                AncSub.IsVisible = true;
+            }
+        }
     }
 
     private void SpatialAudio_Changed(object? s, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (s is RadioButton rb && rb.Tag is string mode && _rfcomm.IsConnected)
+        if (s is RadioButton rb && rb.Tag is string mode && _pods.IsConnected)
         {
             Log.D("UI", $"用户操作: 空间音频 -> {mode}");
-            _rfcomm.SendSpatialAudio(mode);
+            _pods.SendSpatialAudio(mode);
         }
     }
 
     private void CbSpatial_Changed(object? s, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (CbSpatial.IsChecked is { } on && _rfcomm.IsConnected)
+        if (CbSpatial.IsChecked is { } on && _pods.IsConnected)
         {
             Log.D("UI", $"用户操作: 空间声场开关 -> {on}");
             _featureUserSetAt = DateTime.Now;
-            _rfcomm.SendSpatial(on);
+            _pods.SendSpatial(on);
         }
     }
 
     private void CbGame_Changed(object? s, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (CbGame.IsChecked is { } on && _rfcomm.IsConnected)
+        if (CbGame.IsChecked is { } on && _pods.IsConnected)
         {
             Log.D("UI", $"用户操作: 游戏模式开关 -> {on}");
             _featureUserSetAt = DateTime.Now;
-            _rfcomm.SendGameMode(on, _gameModeCompat);
+            _pods.SendGameMode(on, _gameModeCompat);
         }
     }
 
     private void CbDualDevice_Changed(object? s, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (CbDualDevice.IsChecked is { } on && _rfcomm.IsConnected)
+        if (CbDualDevice.IsChecked is { } on && _pods.IsConnected)
         {
             Log.D("UI", $"用户操作: 双设备开关 -> {on}");
             _featureUserSetAt = DateTime.Now;
-            _rfcomm.SendDualDevice(on);
+            _pods.SendDualDevice(on);
         }
     }
 
     private void CbEq_SelectionChanged(object? s, SelectionChangedEventArgs e)
     {
-        if (CbEq.SelectedItem is string name && _rfcomm.IsConnected)
+        if (CbEq.SelectedItem is string name && _pods.IsConnected)
         {
             Log.D("UI", $"用户操作: EQ 预设 -> {name}");
-            _rfcomm.SendEq(name);
+            _pods.SendEq(name);
         }
     }
 
@@ -547,25 +695,27 @@ public partial class MainWindow : SukiWindow
     {
         var caps = _modelOverride != null
             ? DeviceCapabilities.ForceModel(_modelOverride)
-            : _rfcomm.Caps;
+            : _pods.Caps;
 
         CbEq.SelectionChanged -= CbEq_SelectionChanged;
         CbEq.Items.Clear();
         foreach (var kv in caps.EqPresets) CbEq.Items.Add(kv.Key);
         CbEq.SelectionChanged += CbEq_SelectionChanged;
 
+        BuildAncUi(caps);
+        AncPanel.IsVisible = caps.AncOptions.Count > 0;
         SpatialAudioPanel.IsVisible = caps.HasSpatialAudio;
         CbSpatial.IsVisible = caps.HasSpatialSound;
         CbDualDevice.IsVisible = caps.HasDualDevice;
-        BtnAdaptive.IsVisible = caps.HasAdaptiveAnc;
+        DevicePanel.IsVisible = caps.HasDualDevice;
         CbGame.IsVisible = caps.HasGameMode;
 
         ModelNote.Text = _modelOverride == null
-            ? $"当前自动识别: {_rfcomm.Caps.ModelName}"
+            ? $"当前自动识别: {_pods.Caps.ModelName}"
             : $"已手动指定: {caps.ModelName}";
 
         UpdateTitle();
-        if (_rfcomm.State.Connected)
+        if (_pods.State.Connected)
         {
             StatusText.Text = $"已连接 — {caps.ModelName}";
             StatusText.Foreground = BrushLightGreen;
@@ -614,13 +764,13 @@ public partial class MainWindow : SukiWindow
     {
         var caps = _modelOverride != null
             ? DeviceCapabilities.ForceModel(_modelOverride)
-            : _rfcomm.Caps;
+            : _pods.Caps;
         var custom = (TbCustomName.Text ?? "").Trim();
         var name = !string.IsNullOrEmpty(custom) ? custom : caps.ModelName;
         // TitleText.Text = name; // removed with custom title bar; system title bar shows Title
         Title = name;
 
-        var s = _rfcomm.State;
+        var s = _pods.State;
         var parts = new List<string>();
         var bl = MergeCharge(s.Battery.GetValueOrDefault("L"), s.WearingL);
         var br = MergeCharge(s.Battery.GetValueOrDefault("R"), s.WearingR);
@@ -655,7 +805,7 @@ public partial class MainWindow : SukiWindow
     private void Reconnect_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
     {
         Log.D("UI", "用户操作: 点击重连");
-        _rfcomm.Disconnect();
+        _pods.Disconnect();
     }
 
     private void ResetUi()
@@ -672,10 +822,10 @@ public partial class MainWindow : SukiWindow
 
     private void DeviceExpander_Expanded(object? s, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (_rfcomm.IsConnected)
+        if (_pods.IsConnected)
         {
             Log.D("UI", "用户操作: 展开多设备列表");
-            _rfcomm.SendMultiConnectInfo();
+            _pods.SendMultiConnectInfo();
         }
     }
 
@@ -691,20 +841,20 @@ public partial class MainWindow : SukiWindow
     {
         DeviceList.Items.Clear();
 
-        var all = _rfcomm.State.ConnectedDevices
+        var all = _pods.State.ConnectedDevices
             .Where(d => IsHeadphoneDevice(d)).ToList();
         
         // 更新标题文字
         var current = all.FirstOrDefault(d => d.IsCurrentDevice);
         DeviceHeaderText.Text = current != null
             ? $"{current.DeviceName} — {current.ConnectionStatus}"
-            : (_rfcomm.State.Connected ? "已连接" : "未连接");
+            : (_pods.State.Connected ? "已连接" : "未连接");
 
-        if (all.Count == 0 && _rfcomm.State.Connected)
+        if (all.Count == 0 && _pods.State.Connected)
         {
             var caps = _modelOverride != null
                 ? DeviceCapabilities.ForceModel(_modelOverride)
-                : _rfcomm.Caps;
+                : _pods.Caps;
             all.Add(new ConnectedDeviceInfo
             {
                 Address = "current",

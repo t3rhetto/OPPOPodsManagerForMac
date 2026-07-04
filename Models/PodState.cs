@@ -44,7 +44,17 @@ public class PodState
     // 后台线程写、UI 线程读，用并发字典避免竞态崩溃
     public ConcurrentDictionary<string, (int Level, bool Charging)?> Battery { get; } = new();
     public string AncMode { get; set; } = "?";
+
+    /// <summary>智能切换模式下，设备实时计算出的当前档位名（如"深度"）；非智能模式为空。</summary>
+    public string IntelligentRealtime { get; set; } = "";
+
     public string EqPreset { get; set; } = "?";
+
+    /// <summary>远程固件版本（0x8105 响应）；未知为空。</summary>
+    public string FirmwareVersion { get; set; } = "";
+
+    /// <summary>当前音频编解码器 id（0x8114 响应）；未知为 -1。</summary>
+    public int CodecType { get; set; } = -1;
     public string WearingL { get; set; } = "";
     public string WearingR { get; set; } = "";
     public bool Connected { get; set; }

@@ -23,8 +23,8 @@ public sealed class SppTransport : IPodTransport
     private readonly IFrameCodec _codec = new SppFrameCodec();
     private readonly IDeviceLocator _locator;
 
-    /// <summary>默认用 Windows 注册表发现；可注入其它 IDeviceLocator。</summary>
-    public SppTransport() : this(new WindowsBluetoothLocator()) { }
+    /// <summary>默认用官方形式的 WinRT 发现（WindowsRfcommLocator，内部回退注册表）；可注入其它 IDeviceLocator。</summary>
+    public SppTransport() : this(new WindowsRfcommLocator()) { }
     public SppTransport(IDeviceLocator locator) { _locator = locator; }
     private bool _disposed;
 

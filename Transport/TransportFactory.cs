@@ -23,8 +23,13 @@ public static class TransportFactory
 #if WINDOWS
         if (OperatingSystem.IsWindows())
         {
-            Log.D("FACTORY", "Create: Windows 平台 -> SppTransport");
-            return new SppTransport();
+            // 经典 SPP (RFCOMM) 优先——多数 OPPO 耳机在 Windows 下只暴露经典口。
+            // 依次：官方 WinRT StreamSocket → Winsock P/Invoke 回退 → 官方 BLE GATT 回退。
+            Log.D("FACTORY", "Create: Windows 平台 -> RFCOMM(StreamSocket) 优先, Winsock 次之, GATT 回退");
+            return new FallbackTransport(
+                () => new WindowsRfcommStreamTransport(),
+                () => new SppTransport(),
+                () => new WindowsGattTransport());
         }
 #endif
 

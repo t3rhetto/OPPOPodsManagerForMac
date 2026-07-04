@@ -12,9 +12,9 @@
         <ScrollViewer x:Name="MainPanel" Grid.Row="0" VerticalScrollBarVisibility="Hidden">
         <StackPanel Margin="16,4,16,12" Spacing="8">
 
-            <!-- 设备列表（点开查看，不可切换） -->
-            <Border Padding="8,4" CornerRadius="8" BorderThickness="1"
-                    BorderBrush="{DynamicResource SukiBorderBrush}">
+            <!-- 多设备列表（仅支持双设备连接的型号显示，点开查看） -->
+            <Border x:Name="DevicePanel" Padding="8,4" CornerRadius="8" BorderThickness="1"
+                    BorderBrush="{DynamicResource SukiBorderBrush}" IsVisible="False">
                 <Expander x:Name="DeviceExpander" Padding="0" HorizontalAlignment="Left" MinWidth="200">
                     <Expander.Header>
                         <Grid>
@@ -57,78 +57,25 @@
                 </StackPanel>
             </Border>
 
-            <!-- ANC card -->
-            <Border Padding="16" CornerRadius="8" BorderThickness="1"
-                    BorderBrush="{DynamicResource SukiBorderBrush}">
+            <!-- ANC card：主/子模式按型号 JSON 动态生成 -->
+            <Border x:Name="AncPanel" Padding="16" CornerRadius="8" BorderThickness="1"
+                    BorderBrush="{DynamicResource SukiBorderBrush}" IsVisible="False">
                 <StackPanel Spacing="8">
                     <TextBlock Text="降噪控制" FontSize="16" FontWeight="SemiBold"
                                HorizontalAlignment="Center"/>
-                    <!-- Segmented control: single outer border, buttons inside -->
+                    <!-- 主模式段控件（动态填充） -->
                     <Border CornerRadius="6" BorderBrush="{DynamicResource SukiBorderBrush}" BorderThickness="1"
                             HorizontalAlignment="Center">
-                        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
-                            <Border x:Name="BgSmart" CornerRadius="6,0,0,6" Padding="0"
-                                    Background="Transparent">
-                                <Button x:Name="BtnSmart" Content="降噪" Tag="Smart" Click="AncMain_Click"
-                                        Width="90" Height="36" BorderThickness="0" Padding="0"
-                                        Background="Transparent" Focusable="False" Foreground="#CCCCCC" FontSize="14"/>
-                            </Border>
-                            <Border Grid.Column="1" Width="1" Background="{DynamicResource SukiBorderBrush}"/>
-                            <Border x:Name="BgTrans" Grid.Column="2" Padding="0"
-                                    Background="Transparent">
-                                <Button x:Name="BtnTrans" Content="通透" Tag="Transparency" Click="AncMain_Click"
-                                        Width="90" Height="36" BorderThickness="0" Padding="0"
-                                        Background="Transparent" Focusable="False" Foreground="#CCCCCC" FontSize="14"/>
-                            </Border>
-                            <Border Grid.Column="3" Width="1" Background="{DynamicResource SukiBorderBrush}"/>
-                            <Border x:Name="BgAdaptive" Grid.Column="4" Padding="0"
-                                    Background="Transparent">
-                                <Button x:Name="BtnAdaptive" Content="自适应" Tag="Adaptive" Click="AncMain_Click"
-                                        Width="90" Height="36" BorderThickness="0" Padding="0"
-                                        Background="Transparent" Focusable="False" Foreground="#CCCCCC" FontSize="14"/>
-                            </Border>
-                            <Border Grid.Column="5" Width="1" Background="{DynamicResource SukiBorderBrush}"/>
-                            <Border x:Name="BgOff" Grid.Column="6" CornerRadius="0,6,6,0" Padding="0"
-                                    Background="Transparent">
-                                <Button x:Name="BtnOff" Content="关闭" Tag="Off" Click="AncMain_Click"
-                                        Width="90" Height="36" BorderThickness="0" Padding="0"
-                                        Background="Transparent" Focusable="False" Foreground="#CCCCCC" FontSize="14"/>
-                            </Border>
-                        </Grid>
+                        <Grid x:Name="AncMainRow" ColumnDefinitions="Auto"/>
                     </Border>
-                    <!-- Sub-mode segmented control -->
+                    <!-- 子模式段控件（动态填充，仅容器型主模式显示） -->
                     <Border x:Name="AncSub" CornerRadius="5" BorderBrush="{DynamicResource SukiBorderBrush}" BorderThickness="1"
                             HorizontalAlignment="Center" IsVisible="False">
-                        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
-                            <Border x:Name="BgAncSmart" CornerRadius="5,0,0,5" Padding="0"
-                                    Background="Transparent">
-                                <Button x:Name="BtnAncSmart" Content="智能" Tag="Smart" Width="72" Height="28" Click="AncSub_Click"
-                                        BorderThickness="0" Padding="0" Background="Transparent"
-                                        Focusable="False" Foreground="#CCCCCC" FontSize="13"/>
-                            </Border>
-                            <Border Grid.Column="1" Width="1" Background="{DynamicResource SukiBorderBrush}"/>
-                            <Border x:Name="BgAncLight" Grid.Column="2" Padding="0"
-                                    Background="Transparent">
-                                <Button x:Name="BtnAncLight" Content="轻度" Tag="Light" Width="72" Height="28" Click="AncSub_Click"
-                                        BorderThickness="0" Padding="0" Background="Transparent"
-                                        Focusable="False" Foreground="#CCCCCC" FontSize="13"/>
-                            </Border>
-                            <Border Grid.Column="3" Width="1" Background="{DynamicResource SukiBorderBrush}"/>
-                            <Border x:Name="BgAncMedium" Grid.Column="4" Padding="0"
-                                    Background="Transparent">
-                                <Button x:Name="BtnAncMedium" Content="中度" Tag="Medium" Width="72" Height="28" Click="AncSub_Click"
-                                        BorderThickness="0" Padding="0" Background="Transparent"
-                                        Focusable="False" Foreground="#CCCCCC" FontSize="13"/>
-                            </Border>
-                            <Border Grid.Column="5" Width="1" Background="{DynamicResource SukiBorderBrush}"/>
-                            <Border x:Name="BgAncDeep" Grid.Column="6" CornerRadius="0,5,5,0" Padding="0"
-                                    Background="Transparent">
-                                <Button x:Name="BtnAncDeep" Content="深度" Tag="Deep" Width="72" Height="28" Click="AncSub_Click"
-                                        BorderThickness="0" Padding="0" Background="Transparent"
-                                        Focusable="False" Foreground="#CCCCCC" FontSize="13"/>
-                            </Border>
-                        </Grid>
+                        <Grid x:Name="AncSubRow" ColumnDefinitions="Auto"/>
                     </Border>
+                    <!-- 智能切换实时档位提示 -->
+                    <TextBlock x:Name="AncRealtimeHint" FontSize="11" Opacity="0.6" IsVisible="False"
+                               HorizontalAlignment="Center" Foreground="{DynamicResource SukiText}"/>
                 </StackPanel>
             </Border>
 
@@ -262,11 +209,17 @@
                             Tag="https://github.com/1812z/OppoPods">
                         1812z/OppoPods — 功能实现参考
                     </Button>
+                    <Button FontSize="10" HorizontalAlignment="Center" Opacity="0.6" Margin="0,0,0,2"
+                            Background="Transparent" BorderThickness="0"
+                            Click="OpenUrl_Click"
+                            Tag="https://github.com/AvaloniaUI/Avalonia">
+                        AvaloniaUI/Avalonia — 跨平台 UI 框架
+                    </Button>
                     <Button FontSize="10" HorizontalAlignment="Center" Opacity="0.6" Margin="0,0,0,12"
                             Background="Transparent" BorderThickness="0"
                             Click="OpenUrl_Click"
-                            Tag="https://github.com/lepoco/wpfui">
-                        lepoco/wpfui — Windows 11 风格 UI 框架
+                            Tag="https://github.com/kikipoulet/SukiUI">
+                        kikipoulet/SukiUI — Avalonia UI 主题库
                     </Button>
 
                     <TextBlock Text="开源地址" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,4"/>

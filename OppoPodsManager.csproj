@@ -1,13 +1,24 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <!-- 平台后端判定：有 RID 看 RID，否则看构建主机；可用 /p:EnableWindowsBackend=true 强制。
+       需先于 TargetFramework 计算，以便据此选择 Windows 专属 TFM（WinRT/BLE 依赖）。 -->
+  <PropertyGroup>
+    <EnableWindowsBackend Condition="'$(EnableWindowsBackend)' == '' and $(RuntimeIdentifier.StartsWith('win'))">true</EnableWindowsBackend>
+    <EnableWindowsBackend Condition="'$(EnableWindowsBackend)' == '' and '$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">true</EnableWindowsBackend>
+    <EnableWindowsBackend Condition="'$(EnableWindowsBackend)' == ''">false</EnableWindowsBackend>
+  </PropertyGroup>
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- Windows 后端使用 windows TFM 以启用 WinRT (Windows.Devices.Bluetooth GATT)；
+         其它平台保持纯 net10.0，便于后续 Linux/macOS 后端。 -->
+    <TargetFramework Condition="'$(EnableWindowsBackend)' == 'true'">net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetFramework Condition="'$(EnableWindowsBackend)' != 'true'">net10.0</TargetFramework>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <Nullable>enable</Nullable>
     <RootNamespace>OppoPodsManager</RootNamespace>
     <AssemblyName>OppoPodsManager</AssemblyName>
     <ApplicationIcon>Assets\tuopan.ico</ApplicationIcon>
-    <SupportedOSPlatformVersion>windows</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="'$(EnableWindowsBackend)' == 'true'">10.0.19041.0</SupportedOSPlatformVersion>
     <NoWarn>CA1416</NoWarn>
     <PublishAot>true</PublishAot>
     <SelfContained>true</SelfContained>
@@ -16,13 +27,6 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <DebuggerSupport>false</DebuggerSupport>
     <DebugType>none</DebugType>
-  </PropertyGroup>
-
-  <!-- 平台后端判定：有 RID 看 RID，否则看构建主机；可用 /p:EnableWindowsBackend=true 强制 -->
-  <PropertyGroup>
-    <EnableWindowsBackend Condition="'$(EnableWindowsBackend)' == '' and $(RuntimeIdentifier.StartsWith('win'))">true</EnableWindowsBackend>
-    <EnableWindowsBackend Condition="'$(EnableWindowsBackend)' == '' and '$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">true</EnableWindowsBackend>
-    <EnableWindowsBackend Condition="'$(EnableWindowsBackend)' == ''">false</EnableWindowsBackend>
   </PropertyGroup>
 
   <!-- 启用 Windows 后端时定义 WINDOWS 编译符号 -->

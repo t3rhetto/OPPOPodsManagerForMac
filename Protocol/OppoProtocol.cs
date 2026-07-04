@@ -20,7 +20,7 @@ public static class OppoProtocol
     public const ushort CmdAnc = 0x0404;             // 设置降噪模式
     public const ushort CmdQueryAnc = 0x010C;        // 查询降噪状态
     public const ushort CmdAncResp = 0x810C;         // 降噪状态响应
-    public const ushort CmdActiveReport = 0x0204;    // 主动上报（电量/佩戴）
+    public const ushort CmdActiveReport = 0x0204;    // 主动通知事件（payload[0]=子类型，官方 NotificationCommandManager.b 分发）
     public const ushort CmdSetFeature = 0x0403;      // 设置功能开关
     public const ushort CmdSetEq = 0x0406;           // 设置 EQ 预设
     public const ushort CmdQueryEq = 0x010F;         // 查询当前 EQ
@@ -35,6 +35,100 @@ public static class OppoProtocol
     public const ushort CmdOperateHandheld = 0x0429;   // 切换多设备中的活动设备
     public const ushort CmdQueryProductId = 0x0103;    // 查询远程 Product ID（官方设备识别主键）
     public const ushort CmdProductIdResp = 0x8103;     // Product ID 响应
+
+    // ========== 官方完整命令目录（0x100-0x134 查询 / 0x400-0x43B 设置）==========
+    // 来源：APK PollCommandManager 发送方法 + D() 巨型 switch (0x8100-0x8134 响应)。
+    // 命令层用 melody 命令号，经 SPP 0xAA 帧承载。响应 = 命令 | 0x8000。
+    // 标注 [已验证] = 实机日志确认收发；其余为官方目录，供后续按能力启用。
+
+    // ----- 设备信息查询（空载荷）-----
+    public const ushort CmdQueryCapability   = 0x0100;  // requestCapability 基础能力
+    public const ushort CmdQueryMtu          = 0x0101;  // 远程 MTU
+    public const ushort CmdQueryVendorId     = 0x0102;  // 远程 Vendor ID
+    public const ushort CmdQueryVersion      = 0x0105;  // 远程固件版本
+    public const ushort CmdQueryUpgradeCap   = 0x0107;  // 升级能力
+    public const ushort CmdQueryFunctionKey  = 0x0108;  // 按键功能
+    public const ushort CmdQueryEarStatus    = 0x0109;  // 耳机状态
+    public const ushort CmdQueryColorId      = 0x010B;  // 耳机颜色 ID
+    public const ushort CmdQueryFeatureState = 0x010D;  // 功能开关状态（= CmdBatchQuery）
+    public const ushort CmdQueryCodecType    = 0x0114;  // 编解码器类型
+    public const ushort CmdQueryHearing      = 0x0115;  // 听力增强数据
+    public const ushort CmdQueryCapBitmap    = 0x011C;  // 能力位图（TriangleInfo/GetCapability）
+    public const ushort CmdQueryMultiInfo    = 0x011D;  // 多连接信息（另一路）
+    public const ushort CmdQueryEarScan      = 0x011E;  // 耳道扫描数据
+    public const ushort CmdQueryEarTone      = 0x0121;  // 耳音调数据
+    public const ushort CmdQueryEqAll        = 0x0122;  // 全部 EQ 数据
+    public const ushort CmdQueryCodecList    = 0x0123;  // 编解码器列表
+    public const ushort CmdQueryBassEngine   = 0x0124;  // 低音引擎（降噪新格式）
+    public const ushort CmdQueryAccountKey   = 0x0125;  // AccountKey
+    public const ushort CmdQuerySpineCalib   = 0x0129;  // 脊柱校准状态
+    public const ushort CmdQueryColorIdAlt   = 0x012A;  // 耳机颜色 ID（备用）
+    public const ushort CmdQueryGameSound    = 0x012B;  // 游戏音效信息
+    public const ushort CmdSetCurrentNoise   = 0x012E;  // 设置当前降噪（PCM 写路径）
+    public const ushort CmdSetBuildModel     = 0x041F;  // 设置机型 Build.MODEL
+
+    // ----- 高级设置（0x400-0x43B，SetCommandManager 统一处理响应）-----
+    public const ushort CmdSetGlobalSwitch   = 0x0400;  // 全局开关
+    public const ushort CmdSetChargeStatus   = 0x0403;  // = CmdSetFeature（功能开关）
+    public const ushort CmdSetNoiseMode      = 0x0404;  // = CmdAnc（设置降噪）
+    public const ushort CmdSetEqPreset       = 0x0406;  // = CmdSetEq
+    public const ushort CmdSetCodec          = 0x040E;  // 设置编解码器
+    public const ushort CmdSetEqDetail       = 0x0418;  // 设置详细 EQ（自定义频段）
+    public const ushort CmdSetSpatialAudioV2 = 0x0417;  // 空间音频（旧路）
+    public const ushort CmdSetGameModeV2     = 0x0412;  // 游戏模式（新版）
+    public const ushort CmdSetFeatureSwitch  = 0x0423;  // 功能开关设置 [value][enable]
+
+    // ----- 其它操作 -----
+    public const ushort CmdFindDevice        = 0x0435;  // 查找设备（旧 0x35 系）
+    public const ushort CmdSpatialAudioResp  = 0x8422;  // 空间音频响应
+
+    // 已验证收发（实机日志确认）：0x0103/0x0106/0x010C/0x010F/0x010D/0x0112/0x0204/0x0205/
+    //   0x0404/0x0406/0x0403/0x0422/0x0429 及其 0x8xxx 响应、0x8200-0x8205、0x0500-0x05FF。
+
+    // ========== 通知注册响应族（官方 NotificationCommandManager.c 分发，耳机→手机）==========
+    public const ushort CmdNotifyCapabilityResp = 0x8200;  // 通知能力响应（保存耳机支持的事件集）
+    public const ushort CmdRegisterNotifyResp   = 0x8201;  // 单条注册通知响应（含 status+event）
+    public const ushort CmdRegisterNotifyEvent  = 0x8202;  // 注册后携带的事件（内部再走子类型分发）
+    public const ushort CmdCancelNotifyResp     = 0x8203;  // 取消注册通知响应
+    public const ushort CmdRegisterMultiResp    = 0x8205;  // 批量注册通知响应 = 初始化握手完成 ACK
+
+    // ========== 0x0204 通知事件子类型（payload[0]，官方语义）==========
+    public const byte EvtBattery       = 0x01;  // 电池信息 List<BatteryInfo>
+    public const byte EvtEarBudsStatus = 0x02;  // 佩戴/入耳状态 List<StatusInfo>
+    public const byte EvtNoiseMode     = 0x03;  // 降噪模式变更（次字节区分旧/新/智能）
+    public const byte EvtCompactness   = 0x04;  // 贴合度检测
+    public const byte EvtGameMode      = 0x05;  // 游戏模式开关
+    public const byte EvtMultiConnect  = 0x06;  // 多设备连接状态
+    public const byte EvtHearingDetect = 0x08;  // 听力检测状态
+    public const byte EvtCodecType     = 0x09;  // 编解码器类型
+    public const byte EvtZenMode       = 0x0A;  // 禅模式开关
+    public const byte EvtPersonalNoise = 0x0B;  // 个性化降噪结果
+    public const byte EvtTriangle      = 0x0D;  // 空间音频三角信息
+    public const byte EvtEarScan       = 0x0E;  // 耳道扫描结果
+    public const byte EvtGaming        = 0x0F;  // 多连接游戏/手持/点击等级公共事件
+    public const byte EvtOneshot       = 0x10;  // Oneshot 状态
+    public const byte EvtToneChange    = 0x11;  // 耳音调变更
+
+    /// <summary>0x0204 子类型 → 可读名称（用于日志）。</summary>
+    public static string ActiveReportName(int subType) => subType switch
+    {
+        EvtBattery       => "电池",
+        EvtEarBudsStatus => "佩戴状态",
+        EvtNoiseMode     => "降噪变更",
+        EvtCompactness   => "贴合检测",
+        EvtGameMode      => "游戏模式",
+        EvtMultiConnect  => "多连接状态",
+        EvtHearingDetect => "听力检测",
+        EvtCodecType     => "编解码",
+        EvtZenMode       => "禅模式",
+        EvtPersonalNoise => "个性化降噪",
+        EvtTriangle      => "空间音频三角",
+        EvtEarScan       => "耳道扫描",
+        EvtGaming        => "游戏/手持公共事件",
+        EvtOneshot       => "Oneshot",
+        EvtToneChange    => "耳音调",
+        _                => "未知(0x" + subType.ToString("X2") + ")"
+    };
 
     // ========== 功能 feature ID ==========
     public const byte FeatureSpatial = 0x1B;     // 空间音效开关
@@ -220,6 +314,51 @@ public static class OppoProtocol
         for (int i = 0; i < parts.Length; i++)
             payload[1 + i] = Convert.ToByte(parts[i], 16);
         return payload;
+    }
+
+    /// <summary>设置编解码器（cmd 0x040E）：[codec(1)]。</summary>
+    public static byte[] CodecPayload(byte codec) => new[] { codec };
+
+    /// <summary>功能开关设置（cmd 0x0423）：[value(1)][enable(1)]。</summary>
+    public static byte[] FeatureSwitchPayload(byte value, bool enable) =>
+        new[] { value, (byte)(enable ? 0x01 : 0x00) };
+
+    /// <summary>查找设备（cmd 0x0435）：[action(1)] 0=停止 1=开始。</summary>
+    public static byte[] FindDevicePayload(bool start) => new[] { (byte)(start ? 0x01 : 0x00) };
+
+    /// <summary>设置机型（cmd 0x041F）：[len(1)][Build.Model UTF-8]。</summary>
+    public static byte[] BuildModelPayload(string model)
+    {
+        var b = System.Text.Encoding.UTF8.GetBytes(model ?? "");
+        var payload = new byte[1 + b.Length];
+        payload[0] = (byte)(b.Length & 0xFF);
+        Buffer.BlockCopy(b, 0, payload, 1, b.Length);
+        return payload;
+    }
+
+    /// <summary>
+    /// 解析远程固件版本响应（0x8105）：[status(1)][n(1)][UTF-8 CSV]。
+    /// 官方 CommandUtil.k 按逗号分割、每 3 字段为一条 VersionInfo；这里返回原始版本串。
+    /// </summary>
+    public static string? ParseVersion(byte[] payload)
+    {
+        if (payload == null || payload.Length < 3 || payload[0] != 0) return null;
+        try
+        {
+            var s = System.Text.Encoding.UTF8.GetString(payload, 2, payload.Length - 2)
+                        .TrimEnd('\0').Trim();
+            return string.IsNullOrEmpty(s) ? null : s;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>解析编解码器类型响应（0x8114）：[status(1)][n(1)][id,val]×n，返回首个 codec id。</summary>
+    public static int ParseCodecType(byte[] payload)
+    {
+        if (payload == null || payload.Length < 3 || payload[0] != 0) return -1;
+        int n = payload[1];
+        if (n <= 0 || payload.Length < 2 + 2) return -1;
+        return payload[3];   // [id][val] 首对的 val 即当前 codec
     }
 
     /// <summary>

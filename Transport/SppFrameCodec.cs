@@ -5,7 +5,7 @@ namespace OppoPodsManager;
 
 /// <summary>
 /// 经典 SPP / RFCOMM 的帧格式：0xAA + totalLen(1) + 00 00 + cmd(2 LE) + seq + payLen(2 LE) + payload。
-/// 从原 OppoProtocol.BuildPacket / RfcommService.TryExtractFrame 抽取而来。
+/// 从原 OppoProtocol.BuildPacket / 帧提取逻辑抽取而来。
 /// </summary>
 public sealed class SppFrameCodec : IFrameCodec
 {
@@ -52,6 +52,7 @@ public sealed class SppFrameCodec : IFrameCodec
         if (pkt.Length < 9) return false;
 
         ushort cmd = (ushort)(pkt[4] + pkt[5] * 256);
+        byte seq = pkt[6];                    // TRANS_ID（请求/响应配对）
         int payLen = pkt[7] + pkt[8] * 256;
         int payloadStart = 9;
 
@@ -65,7 +66,7 @@ public sealed class SppFrameCodec : IFrameCodec
 
         var payload = new byte[payLen];
         Buffer.BlockCopy(pkt, payloadStart, payload, 0, payLen);
-        frame = new PodFrame(cmd, payload);
+        frame = new PodFrame(cmd, payload, seq);
         return true;
     }
 }
