@@ -30,12 +30,17 @@ public static class SettingsManager
             {
                 var json = File.ReadAllText(FilePath);
                 _cache = JsonSerializer.Deserialize(json, AppSettingsContext.Default.DictionaryStringString) ?? new();
+                Log.D("CFG", $"Load: 从 {FilePath} 读取 {_cache.Count} 项");
             }
             else
+            {
                 _cache = new Dictionary<string, string>();
+                Log.D("CFG", $"Load: 配置文件不存在 {FilePath},使用空配置");
+            }
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Ex("CFG", "Load", ex);
             _cache = new Dictionary<string, string>();
         }
         _lastRead = DateTime.Now;
@@ -50,8 +55,9 @@ public static class SettingsManager
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
             File.WriteAllText(FilePath, JsonSerializer.Serialize(_cache, AppSettingsContext.Default.DictionaryStringString));
+            Log.D("CFG", $"Save: 写入 {_cache.Count} 项 -> {FilePath}");
         }
-        catch { }
+        catch (Exception ex) { Log.Ex("CFG", "Save", ex); }
     }
 
     public static string? GetString(string key, string? defaultValue = null)

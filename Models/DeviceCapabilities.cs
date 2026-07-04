@@ -16,6 +16,9 @@ public class DeviceCapabilities
     public string DeviceName { get; set; } = "";
     public string ModelName { get; set; } = "Unknown";
     public string ModelId { get; set; } = "";
+    public int ProtocolType { get; set; } = 1;      // 0=旧版协议 1/2=新版；本程序命令层仅实现新版
+    public bool SupportSpp { get; set; } = true;    // 是否支持经典 SPP（false 多为 BLE-only）
+    public bool IsSupported { get; set; } = true;   // 名称匹配到 whitelist 且协议可用
 
     // ========== 功能标志 ==========
     public bool HasSpatialAudio { get; set; }      // cmd 0x0422 空间音频三模式（Off/Fixed/Track）
@@ -23,14 +26,17 @@ public class DeviceCapabilities
     public bool HasDualDevice { get; set; }         // feature 0x11 双设备连接
     public bool HasAdaptiveAnc { get; set; }        // ANC 子模式（Smart/Light/Medium/Deep）
     public bool IsLegacyAnc { get; set; }           // noiseReductionMode 无子模式且 ANC On 在异常位置时启用值交换
-    public bool HasGameMode { get; set; } = true;   // 默认支持
+    public bool HasGameMode { get; set; }           // 由 JSON gameSoundList 推导
 
     // ========== EQ 预设 ==========
     public Dictionary<string, byte> EqPresets { get; set; } = new();
     public Dictionary<byte, string> EqNames { get; set; } = new();
 
-    /// <summary>从 noiseReductionMode 构建的 ANC 模式映射：响应字节 → 模式名</summary>
-    public Dictionary<(byte, byte), string> AncModeMap { get; set; } = new();
+    /// <summary>protocolIndex → UI 模式名（按型号 noiseReductionMode 动态构建）</summary>
+    public Dictionary<byte, string> AncIndexToName { get; set; } = new();
+
+    /// <summary>UI 模式名 → protocolIndex（发送 ANC 时按型号取正确字节位）</summary>
+    public Dictionary<string, byte> AncNameToIndex { get; set; } = new();
 
     // ========== 内嵌资源 ==========
     private static readonly List<JsonElement> _deviceModels = LoadDeviceModels();
@@ -81,13 +87,33 @@ public class DeviceCapabilities
     {
         if (string.IsNullOrWhiteSpace(deviceName)) return Default();
         var norm = Normalize(deviceName);
+
+        // 第1轮：规范化后完全相等
         foreach (var entry in _deviceModels)
         {
-            var entryName = entry.GetProperty("name").GetString() ?? "";
-            if (Match(norm, Normalize(entryName)))
+            var nm = Normalize(entry.GetProperty("name").GetString() ?? "");
+            if (nm.Length > 0 && nm == norm)
                 return FromJson(entry, deviceName);
         }
-        return new DeviceCapabilities { DeviceName = deviceName, ModelName = deviceName };
+
+        // 第2轮：设备名包含型号名（型号名需 >=5 字符，避免 "air" 之类误配）
+        foreach (var entry in _deviceModels)
+        {
+            var nm = Normalize(entry.GetProperty("name").GetString() ?? "");
+            if (nm.Length >= 5 && norm.Contains(nm))
+                return FromJson(entry, deviceName);
+        }
+
+        // 第3轮：型号名包含设备名（设备名需 >=5 字符）
+        foreach (var entry in _deviceModels)
+        {
+            var nm = Normalize(entry.GetProperty("name").GetString() ?? "");
+            if (norm.Length >= 5 && nm.Contains(norm))
+                return FromJson(entry, deviceName);
+        }
+
+        // 未匹配：标记为未完整适配
+        return new DeviceCapabilities { DeviceName = deviceName, ModelName = deviceName, IsSupported = false };
     }
 
     /// <summary>按完整型号名手动覆盖检测</summary>
@@ -100,6 +126,20 @@ public class DeviceCapabilities
                 return FromJson(entry, modelName);
         }
         return Default();
+    }
+
+
+    /// <summary>按 productId（官方主键，如 "06F010"）精确识别设备。找不到返回 null。</summary>
+    public static DeviceCapabilities? DetectById(string productId, string? deviceName = null)
+    {
+        if (string.IsNullOrWhiteSpace(productId)) return null;
+        foreach (var entry in _deviceModels)
+        {
+            var entryId = entry.GetProperty("id").GetString() ?? "";
+            if (string.Equals(entryId, productId, StringComparison.OrdinalIgnoreCase))
+                return FromJson(entry, deviceName ?? entry.GetProperty("name").GetString() ?? productId);
+        }
+        return null;
     }
 
     /// <summary>获取所有已知设备型号名称列表</summary>
@@ -122,6 +162,13 @@ public class DeviceCapabilities
         var id = entry.GetProperty("id").GetString() ?? "";
         var caps = new DeviceCapabilities { DeviceName = deviceName, ModelName = name, ModelId = id };
 
+        if (entry.TryGetProperty("protocolType", out var pt) && pt.ValueKind == JsonValueKind.Number)
+            caps.ProtocolType = pt.GetInt32();
+        if (entry.TryGetProperty("supportSpp", out var sp) && (sp.ValueKind == JsonValueKind.True || sp.ValueKind == JsonValueKind.False))
+            caps.SupportSpp = sp.GetBoolean();
+        // 命令层仅实现新版协议(1/2)且需支持 SPP，否则标记为未完整适配
+        caps.IsSupported = caps.SupportSpp && caps.ProtocolType != 0;
+
         if (!entry.TryGetProperty("function", out var func)) return caps;
 
         // spatialTypes 存在 → 空间音效；长度 ≥3 → 空间音频三模式
@@ -137,6 +184,12 @@ public class DeviceCapabilities
         if (func.TryGetProperty("multiDevicesConnect", out var mdc))
             caps.HasDualDevice = mdc.GetInt32() >= 1;
 
+        // gameSoundList 非空 → 游戏模式（官方需 cap(0x423) + 该列表）
+        if (func.TryGetProperty("gameSoundList", out var gsl) && gsl.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var _ in gsl.EnumerateArray()) { caps.HasGameMode = true; break; }
+        }
+
         // noiseReductionMode 有 childrenMode → 自适应降噪子模式
         if (func.TryGetProperty("noiseReductionMode", out var nrm))
         {
@@ -144,7 +197,7 @@ public class DeviceCapabilities
                 if (mode.TryGetProperty("childrenMode", out _))
                     caps.HasAdaptiveAnc = true;
 
-            BuildAncMap(nrm, caps.AncModeMap);
+            BuildAncMap(nrm, caps.AncIndexToName, caps.AncNameToIndex);
 
             // 无 childrenMode 且 modeType 5 在 protocolIndex 0 → 旧版 ANC 值交换
             bool hasChildren = false;
@@ -189,39 +242,55 @@ public class DeviceCapabilities
         foreach (var (k, v) in names) caps.EqPresets[v] = k;
     }
 
-    /// <summary>从 noiseReductionMode 构建 ANC 字节 → 模式名映射</summary>
-    private static void BuildAncMap(JsonElement nrm, Dictionary<(byte, byte), string> map)
+    // modeType 语义（官方 noiseReductionMode）：1=Off 2=Transparency 3=Light 4=Medium 5=强力NC容器 6=Adaptive 7=Smart 8=Super 10=Deep
+    private static string ModeTypeName(int type) => type switch
     {
-        var subNames = new[] { "Smart", "Light", "Medium", "Deep" };
+        1 => "Off",
+        2 => "Transparency",
+        3 => "Light",
+        4 => "Medium",
+        6 => "Adaptive",
+        7 => "Smart",
+        8 => "Super",
+        10 => "Deep",
+        _ => "Mode" + type
+    };
+
+    /// <summary>从 noiseReductionMode 构建 protocolIndex ↔ UI 模式名 的双向映射（按型号动态）</summary>
+    private static void BuildAncMap(JsonElement nrm, Dictionary<byte, string> idxToName, Dictionary<string, byte> nameToIdx)
+    {
         foreach (var entry in nrm.EnumerateArray())
         {
             if (!entry.TryGetProperty("modeType", out var mt)) continue;
-            byte type = mt.GetByte();
-            if (!entry.TryGetProperty("childrenMode", out var children))
+            int type = mt.GetInt32();
+
+            // 有 childrenMode 的是容器（如 modeType 5），实际可选项在子模式里，按子模式的 modeType 命名
+            if (entry.TryGetProperty("childrenMode", out var children) && children.ValueKind == JsonValueKind.Array)
             {
-                if (entry.TryGetProperty("protocolIndex", out var pi))
-                    map[(type, pi.GetByte())] = "Unknown";
+                foreach (var child in children.EnumerateArray())
+                {
+                    if (!child.TryGetProperty("protocolIndex", out var cpi)) continue;
+                    int ctype = child.TryGetProperty("modeType", out var cmt) ? cmt.GetInt32() : type;
+                    Put(idxToName, nameToIdx, cpi.GetByte(), ModeTypeName(ctype));
+                }
                 continue;
             }
-            int idx = 0;
-            foreach (var child in children.EnumerateArray())
-            {
-                if (!child.TryGetProperty("protocolIndex", out var pv)) continue;
-                byte value = pv.GetByte();
-                if (type == 1) map[(type, value)] = "Off";
-                else if (type == 2) map[(type, value)] = "Transparency";
-                else if (idx < subNames.Length) map[(type, value)] = subNames[idx];
-                else map[(type, value)] = $"Mode{value}";
-                idx++;
-            }
+
+            // 扁平项：直接用自身 modeType 命名
+            if (entry.TryGetProperty("protocolIndex", out var pi))
+                Put(idxToName, nameToIdx, pi.GetByte(), ModeTypeName(type));
         }
+    }
+
+    private static void Put(Dictionary<byte, string> idxToName, Dictionary<string, byte> nameToIdx, byte idx, string name)
+    {
+        idxToName[idx] = name;
+        // 名称→索引只记第一次，避免容器/子模式重名覆盖
+        if (!nameToIdx.ContainsKey(name)) nameToIdx[name] = idx;
     }
 
     /// <summary>移除非字母数字字符并转小写，用于模糊匹配</summary>
     private static string Normalize(string name) =>
         new string(name.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
 
-    /// <summary>双向子串匹配（支持 A 包含 B 或 B 包含 A）</summary>
-    private static bool Match(string normName, string normModel) =>
-        normName.Contains(normModel) || normModel.Contains(normName);
 }

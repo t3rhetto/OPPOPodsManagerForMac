@@ -2,6 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <Nullable>enable</Nullable>
     <RootNamespace>OppoPodsManager</RootNamespace>
     <AssemblyName>OppoPodsManager</AssemblyName>
@@ -17,10 +18,27 @@
     <DebugType>none</DebugType>
   </PropertyGroup>
 
-  <!-- Embedded JSON data -->
+  <!-- 平台后端判定：有 RID 看 RID，否则看构建主机；可用 /p:EnableWindowsBackend=true 强制 -->
+  <PropertyGroup>
+    <EnableWindowsBackend Condition="'$(EnableWindowsBackend)' == '' and $(RuntimeIdentifier.StartsWith('win'))">true</EnableWindowsBackend>
+    <EnableWindowsBackend Condition="'$(EnableWindowsBackend)' == '' and '$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">true</EnableWindowsBackend>
+    <EnableWindowsBackend Condition="'$(EnableWindowsBackend)' == ''">false</EnableWindowsBackend>
+  </PropertyGroup>
+
+  <!-- 启用 Windows 后端时定义 WINDOWS 编译符号 -->
+  <PropertyGroup Condition="'$(EnableWindowsBackend)' == 'true'">
+    <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
+  </PropertyGroup>
+
+  <!-- 非 Windows 目标：把 Windows 专属源码排除出编译 -->
+  <ItemGroup Condition="'$(EnableWindowsBackend)' != 'true'">
+    <Compile Remove="Transport\Windows\**\*.cs" />
+  </ItemGroup>
+
+  <!-- Embedded JSON data（保持 LogicalName 与代码里 GetManifestResourceStream 的名称一致）-->
   <ItemGroup>
-    <EmbeddedResource Include="DeviceModels.json" />
-    <EmbeddedResource Include="EqModeNames.json" />
+    <EmbeddedResource Include="Data\DeviceModels.json" LogicalName="OppoPodsManager.DeviceModels.json" />
+    <EmbeddedResource Include="Data\EqModeNames.json" LogicalName="OppoPodsManager.EqModeNames.json" />
   </ItemGroup>
 
   <!-- Avalonia assets -->

@@ -62,7 +62,8 @@ file static class AssetHelper
 
 public partial class MainWindow : SukiWindow
 {
-    private readonly RfcommService _rfcomm = new();
+    // 前端只依赖 IPodManager 契约；构造点耦合具体类，其余交互全走接口
+    private readonly IPodManager _rfcomm = new RfcommService();
     private CancellationTokenSource? _pollCts;
     private string _ancMain = "", _ancLevel = "";
     private DateTime _ancUserSetAt = DateTime.MinValue;
@@ -103,9 +104,9 @@ public partial class MainWindow : SukiWindow
     {
         try
         {
-            System.Diagnostics.Debug.WriteLine("[UI] MainWindow constructor start");
+            Log.D("UI", "MainWindow 构造开始");
             InitializeComponent();
-            System.Diagnostics.Debug.WriteLine("[UI] InitializeComponent OK");
+            Log.D("UI", "InitializeComponent OK");
 
         // Wire events programmatically (Avalonia 12 compatibility)
             CbSpatial.IsCheckedChanged += CbSpatial_Changed;
@@ -213,7 +214,7 @@ public partial class MainWindow : SukiWindow
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine("[UI] MainWindow ctor ERROR: " + ex);
+            Log.Ex("UI", "MainWindow 构造", ex);
             throw;
         }
     }
@@ -222,14 +223,21 @@ public partial class MainWindow : SukiWindow
     {
         while (!_realClose)
         {
+            Log.D("UI", "ConnectAsync: 尝试连接");
             await _rfcomm.ConnectAsync();
             if (_rfcomm.IsConnected)
             {
+                Log.D("UI", "ConnectAsync: 已连接,进入轮询");
                 _pollCts = new CancellationTokenSource();
                 await _rfcomm.PollAsync(_pollCts.Token);
+                Log.D("UI", "ConnectAsync: 轮询结束");
+            }
+            else
+            {
+                Log.D("UI", "ConnectAsync: 连接失败 -> " + (_rfcomm.LastError ?? "unknown"));
             }
             _ = Dispatcher.UIThread.InvokeAsync(() => OnStateChanged());
-            if (!_realClose) await Task.Delay(5000);
+            if (!_realClose) { Log.D("UI", "ConnectAsync: 5s 后重试"); await Task.Delay(5000); }
         }
     }
 
@@ -245,7 +253,9 @@ public partial class MainWindow : SukiWindow
             if (s.Connected)
         {
             StatusDot.Fill = BrushGreen;
-            StatusText.Text = $"已连接 — {caps.ModelName}";
+            StatusText.Text = caps.IsSupported
+                ? $"已连接 — {caps.ModelName}"
+                : $"已连接 — {caps.ModelName}（此型号可能未完整适配）";
             StatusText.Foreground = BrushLightGreen;
             BtnReconnect.IsVisible = false;
 
@@ -346,13 +356,14 @@ public partial class MainWindow : SukiWindow
         CbSpatial.IsVisible = caps.HasSpatialSound;
         CbDualDevice.IsVisible = caps.HasDualDevice;
         BtnAdaptive.IsVisible = caps.HasAdaptiveAnc;
+        CbGame.IsVisible = caps.HasGameMode;
 
         ModelNote.Text = $"当前自动识别: {caps.ModelName}";
         UpdateTitle();
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[UI] OnStateChanged error: {ex.Message}");
+            Log.Ex("UI", "OnStateChanged", ex);
         }
     });
 
@@ -408,6 +419,7 @@ public partial class MainWindow : SukiWindow
     private void SwitchAncMain(string mode)
     {
         if (!_rfcomm.IsConnected) return;
+        Log.D("UI", $"用户操作: ANC 主模式 -> {mode}");
         _ancUserSetAt = DateTime.Now;
         _ancMain = mode;
         AncSub.IsVisible = (mode == "Smart");
@@ -419,6 +431,7 @@ public partial class MainWindow : SukiWindow
     private void SwitchAncSub(string mode)
     {
         if (!_rfcomm.IsConnected) return;
+        Log.D("UI", $"用户操作: ANC 子级别 -> {mode}");
         _ancUserSetAt = DateTime.Now;
         _ancLevel = mode;
         _rfcomm.SendAnc(mode);
@@ -438,13 +451,17 @@ public partial class MainWindow : SukiWindow
     private void SpatialAudio_Changed(object? s, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (s is RadioButton rb && rb.Tag is string mode && _rfcomm.IsConnected)
+        {
+            Log.D("UI", $"用户操作: 空间音频 -> {mode}");
             _rfcomm.SendSpatialAudio(mode);
+        }
     }
 
     private void CbSpatial_Changed(object? s, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (CbSpatial.IsChecked is { } on && _rfcomm.IsConnected)
         {
+            Log.D("UI", $"用户操作: 空间声场开关 -> {on}");
             _featureUserSetAt = DateTime.Now;
             _rfcomm.SendSpatial(on);
         }
@@ -454,6 +471,7 @@ public partial class MainWindow : SukiWindow
     {
         if (CbGame.IsChecked is { } on && _rfcomm.IsConnected)
         {
+            Log.D("UI", $"用户操作: 游戏模式开关 -> {on}");
             _featureUserSetAt = DateTime.Now;
             _rfcomm.SendGameMode(on, _gameModeCompat);
         }
@@ -463,6 +481,7 @@ public partial class MainWindow : SukiWindow
     {
         if (CbDualDevice.IsChecked is { } on && _rfcomm.IsConnected)
         {
+            Log.D("UI", $"用户操作: 双设备开关 -> {on}");
             _featureUserSetAt = DateTime.Now;
             _rfcomm.SendDualDevice(on);
         }
@@ -471,7 +490,10 @@ public partial class MainWindow : SukiWindow
     private void CbEq_SelectionChanged(object? s, SelectionChangedEventArgs e)
     {
         if (CbEq.SelectedItem is string name && _rfcomm.IsConnected)
+        {
+            Log.D("UI", $"用户操作: EQ 预设 -> {name}");
             _rfcomm.SendEq(name);
+        }
     }
 
     private void CbBrand_Changed(object? s, SelectionChangedEventArgs e)
@@ -508,6 +530,7 @@ public partial class MainWindow : SukiWindow
     {
         if (CbModel.SelectedItem is string model && model != "（全部机型）")
         {
+            Log.D("UI", $"用户操作: 手动指定机型 -> {model}");
             _modelOverride = model;
             SettingsManager.SetString("ModelOverride", model);
             SyncCaps();
@@ -535,6 +558,7 @@ public partial class MainWindow : SukiWindow
         CbSpatial.IsVisible = caps.HasSpatialSound;
         CbDualDevice.IsVisible = caps.HasDualDevice;
         BtnAdaptive.IsVisible = caps.HasAdaptiveAnc;
+        CbGame.IsVisible = caps.HasGameMode;
 
         ModelNote.Text = _modelOverride == null
             ? $"当前自动识别: {_rfcomm.Caps.ModelName}"
@@ -557,6 +581,7 @@ public partial class MainWindow : SukiWindow
     private void CbTheme_Changed(object? s, SelectionChangedEventArgs e)
     {
         var idx = CbTheme.SelectedIndex;
+        Log.D("UI", $"用户操作: 切换主题 -> {idx}");
         ApplyTheme(idx);
         SettingsManager.SetInt("Theme", idx);
     }
@@ -629,6 +654,7 @@ public partial class MainWindow : SukiWindow
 
     private void Reconnect_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        Log.D("UI", "用户操作: 点击重连");
         _rfcomm.Disconnect();
     }
 
@@ -648,8 +674,8 @@ public partial class MainWindow : SukiWindow
     {
         if (_rfcomm.IsConnected)
         {
+            Log.D("UI", "用户操作: 展开多设备列表");
             _rfcomm.SendMultiConnectInfo();
-            System.Diagnostics.Debug.WriteLine("[UI] Requested multi-device list on expand");
         }
     }
 
@@ -781,7 +807,7 @@ public partial class MainWindow : SukiWindow
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[Tray] Failed to setup tray icon: {ex.Message}");
+            Log.Ex("UI", "SetupTrayIcon", ex);
         }
     }
 

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
@@ -40,7 +41,8 @@ public class ConnectedDeviceInfo : INotifyPropertyChanged
 
 public class PodState
 {
-    public Dictionary<string, (int Level, bool Charging)?> Battery { get; } = new();
+    // 后台线程写、UI 线程读，用并发字典避免竞态崩溃
+    public ConcurrentDictionary<string, (int Level, bool Charging)?> Battery { get; } = new();
     public string AncMode { get; set; } = "?";
     public string EqPreset { get; set; } = "?";
     public string WearingL { get; set; } = "";

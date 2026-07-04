@@ -109,6 +109,6 @@ public partial class ToastWindow : Window
         tb.Text = $"{v.Lvl}%{(v.Chg ? " ⚡" : "")}";
     }
 
-    private static (int, bool)? TryGet(Dictionary<string, (int, bool)?> dict, string key) =>
+    private static (int, bool)? TryGet(System.Collections.Concurrent.ConcurrentDictionary<string, (int, bool)?> dict, string key) =>
         dict.TryGetValue(key, out var v) ? v : null;
 }

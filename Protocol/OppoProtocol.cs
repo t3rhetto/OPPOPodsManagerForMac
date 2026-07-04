@@ -33,6 +33,8 @@ public static class OppoProtocol
     public const ushort CmdMultiConnectInfo = 0x0112;  // 查询多设备连接列表
     public const ushort CmdMultiConnectResp = 0x8112;  // 多设备列表响应
     public const ushort CmdOperateHandheld = 0x0429;   // 切换多设备中的活动设备
+    public const ushort CmdQueryProductId = 0x0103;    // 查询远程 Product ID（官方设备识别主键）
+    public const ushort CmdProductIdResp = 0x8103;     // Product ID 响应
 
     // ========== 功能 feature ID ==========
     public const byte FeatureSpatial = 0x1B;     // 空间音效开关
@@ -49,7 +51,7 @@ public static class OppoProtocol
     public static readonly byte[] AncAdaptive    = { 0x01, 0x01, 0x00, 0x08 };
     public static readonly byte[] AncTransparency = { 0x01, 0x01, 0x04 };
 
-    /// <summary>ANC 响应字节到模式名的反向查找。不同型号字节不同，动态映射见 DeviceCapabilities.AncModeMap</summary>
+    /// <summary>ANC 响应字节到模式名的反向查找（静态回退表）。按型号的动态映射见 DeviceCapabilities.AncIndexToName</summary>
     public static readonly Dictionary<(byte, byte), string> AncValues = new()
     {
         [(8, 0)]   = "Off",
@@ -80,10 +82,10 @@ public static class OppoProtocol
         pkt[2] = 0x00;
         pkt[3] = 0x00;
         pkt[4] = (byte)(cmd & 0xFF);
-        pkt[5] = (byte)(cmd >> 8);
+        pkt[5] = (byte)((cmd / 256) & 0xFF);
         pkt[6] = Seq;
         pkt[7] = (byte)(payload.Length & 0xFF);
-        pkt[8] = (byte)(payload.Length >> 8);
+        pkt[8] = (byte)((payload.Length / 256) & 0xFF);
         Buffer.BlockCopy(payload, 0, pkt, 9, payload.Length);
         return pkt;
     }
@@ -123,6 +125,22 @@ public static class OppoProtocol
         _ => mode
     };
 
+    /// <summary>按 protocolIndex 生成 ANC 设置帧（新版协议：位图 type=1，bit=protocolIndex）。</summary>
+    public static byte[] PktAncByIndex(byte protocolIndex)
+    {
+        // payload = [flag 0x01][type 0x01=位图][bitmap...]，第 protocolIndex 位置 1
+        int byteCount = (protocolIndex / 8) + 1;
+        var payload = new byte[2 + byteCount];
+        payload[0] = 0x01;
+        payload[1] = 0x01;
+        // bit = 2^(protocolIndex % 8)，避免使用位移运算符
+        int bitPos = protocolIndex % 8;
+        int bitVal = 1;
+        for (int k = 0; k < bitPos; k++) bitVal *= 2;
+        payload[2 + (protocolIndex / 8)] = (byte)bitVal;
+        return BuildPacket(CmdAnc, payload);
+    }
+
     /// <summary>根据 ANC 模式名生成设置帧</summary>
     public static byte[] PktAncMode(string mode) => mode switch
     {
@@ -143,4 +161,76 @@ public static class OppoProtocol
         "Track"  => BuildPacket(CmdSpatialAudio, SpatialTrack),
         _        => BuildPacket(CmdSpatialAudio, SpatialOff),
     };
+
+    // ===== 载荷构造（供传输层 Send(cmd, payload)；帧封装交给 IFrameCodec）=====
+    public static readonly byte[] PayEmpty = { };
+    public static readonly byte[] PayQueryAnc = { 0x01, 0x01 };
+    public static readonly byte[] PayRegisterNotify = { 0x01, 0x01, 0x02, 0x02 };
+    public static readonly byte[] PayRegisterWear = { 0x02, 0x02 };
+    public static readonly byte[] PayBatchQuery = { 0x0B, 0x05, 0x04, 0x0B, 0x11, 0x13, 0x18, 0x06, 0x1B, 0x1C, 0x27, 0x28 };
+
+    public static byte[] FeaturePayload(byte feature, bool on)
+    {
+        return new byte[] { feature, (byte)(on ? 0x01 : 0x00) };
+    }
+
+    public static byte[] AncPayloadByIndex(byte protocolIndex)
+    {
+        int byteCount = (protocolIndex / 8) + 1;
+        var payload = new byte[2 + byteCount];
+        payload[0] = 0x01;
+        payload[1] = 0x01;
+        int bitPos = protocolIndex % 8;
+        int bitVal = 1;
+        for (int k = 0; k < bitPos; k++) bitVal *= 2;
+        payload[2 + (protocolIndex / 8)] = (byte)bitVal;
+        return payload;
+    }
+
+    public static byte[] AncPayloadByName(string mode)
+    {
+        switch (mode)
+        {
+            case "Off": return AncOff;
+            case "Smart": return AncSmart;
+            case "Light": return AncLight;
+            case "Medium": return AncMedium;
+            case "Deep": return AncDeep;
+            case "Adaptive": return AncAdaptive;
+            case "Transparency": return AncTransparency;
+            default: return AncOff;
+        }
+    }
+
+    public static byte[] SpatialPayload(string mode)
+    {
+        switch (mode)
+        {
+            case "Fixed": return SpatialFixed;
+            case "Track": return SpatialTrack;
+            default: return SpatialOff;
+        }
+    }
+
+    public static byte[] OperateHandheldPayload(string targetAddress, bool connect)
+    {
+        var parts = targetAddress.Split(':');
+        var payload = new byte[1 + parts.Length];
+        payload[0] = (byte)(connect ? 0x01 : 0x00);
+        for (int i = 0; i < parts.Length; i++)
+            payload[1 + i] = Convert.ToByte(parts[i], 16);
+        return payload;
+    }
+
+    /// <summary>
+    /// 解析 0x8103 响应载荷，返回 6 位大写十六进制 productId（匹配 JSON id），失败返回 null。
+    /// 格式：[status(1)][productId(3 字节, 小端)]，status!=0 或长度!=4 视为无效。
+    /// </summary>
+    public static string? ParseProductId(byte[] payload)
+    {
+        if (payload == null || payload.Length != 4) return null;
+        if (payload[0] != 0) return null;  // status 非 0 = 失败
+        int id = payload[1] + payload[2] * 256 + payload[3] * 65536;
+        return id.ToString("X6");
+    }
 }
