@@ -1,0 +1,260 @@
+<suki:SukiWindow xmlns="https://github.com/avaloniaui"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:suki="https://github.com/kikipoulet/SukiUI"
+                 xmlns:local="using:OppoPodsManager"
+                 x:Class="OppoPodsManager.MainWindow"
+                 Title="OPPO Pods For Windows" Height="741" Width="460"
+                 WindowStartupLocation="CenterScreen"
+                 CanMinimize="True" CanMaximize="True" CanPin="False" CanFullScreen="False">
+
+    <Grid RowDefinitions="*,Auto">
+        <!-- Main page -->
+        <ScrollViewer x:Name="MainPanel" Grid.Row="0" VerticalScrollBarVisibility="Hidden">
+        <StackPanel Margin="16,4,16,12" Spacing="8">
+
+            <!-- 多设备列表（仅支持双设备连接的型号显示，点开查看） -->
+            <Border x:Name="DevicePanel" Padding="8,4" CornerRadius="8" BorderThickness="1"
+                    BorderBrush="{DynamicResource SukiBorderBrush}" IsVisible="False">
+                <Expander x:Name="DeviceExpander" Padding="0" HorizontalAlignment="Left" MinWidth="200">
+                    <Expander.Header>
+                        <Grid>
+                            <TextBlock x:Name="DeviceHeaderText" Text="选择耳机" FontSize="13"
+                                       VerticalAlignment="Center"/>
+                        </Grid>
+                    </Expander.Header>
+                    <ItemsControl x:Name="DeviceList" Margin="0,4,0,0"/>
+                </Expander>
+            </Border>
+            <Border Padding="16" CornerRadius="8" BorderThickness="1"
+                    BorderBrush="{DynamicResource SukiBorderBrush}">
+                <StackPanel>
+                    <TextBlock Text="电量" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"
+                               HorizontalAlignment="Center"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" HorizontalAlignment="Center" Margin="8,0">
+                            <Image x:Name="LeftImage" Height="64"/>
+                            <TextBlock x:Name="LeftLabel" Text="-%" HorizontalAlignment="Center" FontSize="11"/>
+                            <ProgressBar x:Name="LeftBar" Width="64" Height="6" Value="0" Maximum="100" Margin="0,2,0,0"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" HorizontalAlignment="Center" Margin="8,0">
+                            <Image x:Name="CaseImage" Height="64"/>
+                            <TextBlock x:Name="CaseLabel" Text="-%" HorizontalAlignment="Center" FontSize="11"/>
+                            <ProgressBar x:Name="CaseBar" Width="64" Height="6" Value="0" Maximum="100" Margin="0,2,0,0"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" HorizontalAlignment="Center" Margin="8,0">
+                            <Image x:Name="RightImage" Height="64"/>
+                            <TextBlock x:Name="RightLabel" Text="-%" HorizontalAlignment="Center" FontSize="11"/>
+                            <ProgressBar x:Name="RightBar" Width="64" Height="6" Value="0" Maximum="100" Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock x:Name="WearStatus" Text="" FontSize="11" HorizontalAlignment="Center"
+                               Opacity="0.6" Margin="0,6,0,0" Foreground="{DynamicResource SukiText}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- ANC card：主/子模式按型号 JSON 动态生成 -->
+            <Border x:Name="AncPanel" Padding="16" CornerRadius="8" BorderThickness="1"
+                    BorderBrush="{DynamicResource SukiBorderBrush}" IsVisible="False">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="降噪控制" FontSize="16" FontWeight="SemiBold"
+                               HorizontalAlignment="Center"/>
+                    <!-- 主模式段控件（动态填充） -->
+                    <Border CornerRadius="6" BorderBrush="{DynamicResource SukiBorderBrush}" BorderThickness="1"
+                            HorizontalAlignment="Center">
+                        <Grid x:Name="AncMainRow" ColumnDefinitions="Auto"/>
+                    </Border>
+                    <!-- 子模式段控件（动态填充，仅容器型主模式显示） -->
+                    <Border x:Name="AncSub" CornerRadius="5" BorderBrush="{DynamicResource SukiBorderBrush}" BorderThickness="1"
+                            HorizontalAlignment="Center" IsVisible="False">
+                        <Grid x:Name="AncSubRow" ColumnDefinitions="Auto"/>
+                    </Border>
+                    <!-- 智能切换实时档位提示 -->
+                    <TextBlock x:Name="AncRealtimeHint" FontSize="11" Opacity="0.6" IsVisible="False"
+                               HorizontalAlignment="Center" Foreground="{DynamicResource SukiText}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Spatial Audio card -->
+            <Border x:Name="SpatialAudioPanel" Padding="16" CornerRadius="8" BorderThickness="1"
+                    BorderBrush="{DynamicResource SukiBorderBrush}" IsVisible="False">
+                <StackPanel>
+                    <TextBlock Text="空间音频" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,6"
+                               HorizontalAlignment="Center"/>
+                    <WrapPanel HorizontalAlignment="Center">
+                        <RadioButton Content="关闭" Tag="Off" GroupName="SpatialAudio" Margin="4" IsChecked="True"/>
+                        <RadioButton Content="固定" Tag="Fixed" GroupName="SpatialAudio" Margin="4"/>
+                        <RadioButton Content="头部追踪" Tag="Track" GroupName="SpatialAudio" Margin="4"/>
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Features card -->
+            <Border Padding="16" CornerRadius="8" BorderThickness="1"
+                    BorderBrush="{DynamicResource SukiBorderBrush}">
+                <StackPanel>
+                    <TextBlock Text="功能" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,6"
+                               HorizontalAlignment="Center"/>
+                    <WrapPanel HorizontalAlignment="Center">
+                        <CheckBox x:Name="CbSpatial" Content="空间音效" Margin="4" IsVisible="False"/>
+                        <CheckBox x:Name="CbGame" Content="游戏模式" Margin="4"/>
+                        <CheckBox x:Name="CbGameSound" Content="游戏音效" Margin="4" IsVisible="False"/>
+                    </WrapPanel>
+                    <CheckBox x:Name="CbDualDevice" Content="双设备连接" Margin="4" HorizontalAlignment="Center"
+                              IsVisible="False"/>
+
+                    <TextBlock Text="大师调音" FontSize="12" Margin="0,6,0,2" HorizontalAlignment="Center"/>
+                    <ComboBox x:Name="CbEq" Width="200" Height="30" Padding="8,0" Margin="0,0,0,6"
+                              HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Settings & About -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                <Button Height="36" FontSize="12" Opacity="0.7" Padding="12,0" Click="Settings_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#x2699;" FontSize="16"/>
+                        <TextBlock Text=" 设置" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button Height="36" FontSize="12" Opacity="0.7" Padding="12,0" Click="About_Click" Margin="8,0,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#x2139;" FontSize="16"/>
+                        <TextBlock Text=" 关于" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+
+        </StackPanel>
+        </ScrollViewer>
+
+        <!-- Settings page -->
+        <ScrollViewer x:Name="SettingsPanel" Grid.Row="0" VerticalScrollBarVisibility="Disabled" IsVisible="False">
+        <StackPanel Margin="16,4,16,12" Spacing="8">
+            <Border Padding="16" CornerRadius="8" BorderThickness="1"
+                    BorderBrush="{DynamicResource SukiBorderBrush}">
+                <StackPanel>
+                    <TextBlock Text="设置" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,12"
+                               HorizontalAlignment="Center"/>
+
+                    <TextBlock Text="设备型号" FontSize="12" Margin="0,0,0,2" HorizontalAlignment="Center"/>
+                    <ComboBox x:Name="CbBrand" Width="200" Height="30" Padding="8,0" Margin="0,0,0,4"
+                              HorizontalAlignment="Center"/>
+                    <ComboBox x:Name="CbSeries" Width="200" Height="30" Padding="8,0" Margin="0,0,0,4"
+                              HorizontalAlignment="Center"/>
+                    <ComboBox x:Name="CbModel" Width="200" Height="30" Padding="8,0" Margin="0,0,0,12"
+                              HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="ModelNote" Text="" FontSize="10" HorizontalAlignment="Center" Opacity="0.5" Margin="0,-8,0,8"/>
+
+                    <TextBlock Text="自定义设备名称" FontSize="12" Margin="0,0,0,2" HorizontalAlignment="Center"/>
+                    <TextBox x:Name="TbCustomName" Width="200" Height="30" Padding="8,4" Margin="0,0,0,12"
+                             HorizontalContentAlignment="Center" HorizontalAlignment="Center"/>
+
+                    <TextBlock Text="游戏模式实现" FontSize="12" Margin="0,0,0,2" HorizontalAlignment="Center"/>
+                    <ComboBox x:Name="CbGameMode" Width="200" Height="30" Padding="8,0" Margin="0,0,0,12"
+                              HorizontalAlignment="Center">
+                        <ComboBoxItem Content="标准 (28)"/>
+                        <ComboBoxItem Content="兼容 (28+06)"/>
+                    </ComboBox>
+
+                    <TextBlock Text="主题" FontSize="12" Margin="0,0,0,2" HorizontalAlignment="Center"/>
+                    <ComboBox x:Name="CbTheme" Width="200" Height="30" Padding="8,0" Margin="0,0,0,12"
+                              HorizontalAlignment="Center">
+                        <ComboBoxItem Content="跟随系统"/>
+                        <ComboBoxItem Content="深色"/>
+                        <ComboBoxItem Content="浅色"/>
+                    </ComboBox>
+
+                    <CheckBox x:Name="CbTray" Content="关闭到托盘：关闭窗口时最小化到系统托盘" Margin="0,0,0,8"
+                              HorizontalAlignment="Center"/>
+                    <CheckBox x:Name="CbAuto" Content="开机自启：系统启动时自动运行" Margin="0,0,0,12"
+                              HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+
+            <Button Height="36" HorizontalAlignment="Center" Click="Settings_Click"
+                    FontSize="12" Opacity="0.7" Padding="12,0">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#x2190;" FontSize="16"/>
+                    <TextBlock Text=" 返回" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+        </StackPanel>
+        </ScrollViewer>
+
+        <!-- About page -->
+        <ScrollViewer x:Name="AboutPanel" Grid.Row="0" VerticalScrollBarVisibility="Disabled" IsVisible="False">
+        <StackPanel Margin="16,4,16,12" Spacing="8">
+            <Border Padding="16" CornerRadius="8" BorderThickness="1"
+                    BorderBrush="{DynamicResource SukiBorderBrush}">
+                <StackPanel>
+                    <TextBlock Text="关于" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,12"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock Text="OPPO Pods For Windows" FontSize="13" HorizontalAlignment="Center" Margin="0,0,0,4"/>
+                    <TextBlock x:Name="VersionText" Text="v1.0.5" FontSize="11" HorizontalAlignment="Center" Opacity="0.5" Margin="0,0,0,12"/>
+
+                    <TextBlock Text="致谢" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,4"/>
+                    <Button FontSize="10" HorizontalAlignment="Center" Opacity="0.6" Margin="0,0,0,2"
+                            Background="Transparent" BorderThickness="0"
+                            Click="OpenUrl_Click"
+                            Tag="https://github.com/Leaf-lsgtky/OppoPods">
+                        Leaf-lsgtky/OppoPods — OPPO 耳机私有协议逆向
+                    </Button>
+                    <Button FontSize="10" HorizontalAlignment="Center" Opacity="0.6" Margin="0,0,0,2"
+                            Background="Transparent" BorderThickness="0"
+                            Click="OpenUrl_Click"
+                            Tag="https://github.com/1812z/OppoPods">
+                        1812z/OppoPods — 功能实现参考
+                    </Button>
+                    <Button FontSize="10" HorizontalAlignment="Center" Opacity="0.6" Margin="0,0,0,2"
+                            Background="Transparent" BorderThickness="0"
+                            Click="OpenUrl_Click"
+                            Tag="https://github.com/AvaloniaUI/Avalonia">
+                        AvaloniaUI/Avalonia — 跨平台 UI 框架
+                    </Button>
+                    <Button FontSize="10" HorizontalAlignment="Center" Opacity="0.6" Margin="0,0,0,12"
+                            Background="Transparent" BorderThickness="0"
+                            Click="OpenUrl_Click"
+                            Tag="https://github.com/kikipoulet/SukiUI">
+                        kikipoulet/SukiUI — Avalonia UI 主题库
+                    </Button>
+
+                    <TextBlock Text="开源地址" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,4"/>
+                    <Button FontSize="10" HorizontalAlignment="Center" Opacity="0.6"
+                            Background="Transparent" BorderThickness="0"
+                            Click="OpenUrl_Click"
+                            Tag="https://github.com/Zhaoyi-ya/OPPO-Pods-For-Windows">
+                        github.com/Zhaoyi-ya/OPPO-Pods-For-Windows
+                    </Button>
+                </StackPanel>
+            </Border>
+            <Button Height="36" HorizontalAlignment="Center" Click="About_Click"
+                    FontSize="12" Opacity="0.7" Padding="12,0">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#x2190;" FontSize="16"/>
+                    <TextBlock Text=" 返回" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+        </StackPanel>
+        </ScrollViewer>
+
+        <!-- Connection status bar -->
+        <Border x:Name="StatusBar" Grid.Row="1" Padding="12,6"
+                Background="#18202020" BorderBrush="#30FFFFFF" BorderThickness="0,1,0,0">
+            <Grid>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                    <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="#FF5555" Margin="0,0,6,0"/>
+                    <TextBlock x:Name="StatusText" Text="未连接" FontSize="11" Foreground="#FF8888"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+                <Button x:Name="BtnReconnect" Content="重新连接" Height="24" FontSize="11"
+                        HorizontalAlignment="Right" Click="Reconnect_Click"
+                        Padding="12,0" IsVisible="False"/>
+            </Grid>
+        </Border>
+    </Grid>
+</suki:SukiWindow>

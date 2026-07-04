@@ -1,195 +1,106 @@
 # OPPO Pods For Windows
 
-[中文](#中文) | [English](#english)
+[中文](https://github.com/Zhaoyi-ya/OPPO-Pods-For-Windows/blob/main/README.md) | [English](https://github.com/Zhaoyi-ya/OPPO-Pods-For-Windows/blob/main/README_EN.md)
 
 ---
 
-## English
+在 Windows 桌面上管理你的 OPPO / OnePlus / realme 蓝牙耳机——查看电量、切换降噪、调音、管理多设备连接，无需打开手机 App。
 
-Windows desktop OPPO / OnePlus / realme earbuds Bluetooth controller, supporting **137 devices** across all three brands.
-
-> `DeviceModels.json` is reverse-engineered from OPPO Melody App v16.8.1 by [@Dszsu](https://github.com/Dszsu). Device capabilities are auto-detected from the whitelist. Manual override with fuzzy search is available in Settings.
->
-> **Note:** Only OPPO Enco Free4 and Enco Air4 Pro have been tested on real hardware. Other models' adaptation logic has not been verified — full functionality is not guaranteed.
-
-Built on the OPPO proprietary RFCOMM protocol reverse-engineered by [Leaf-lsgtky/OppoPods](https://github.com/Leaf-lsgtky/OppoPods), with feature matrix reference from [1812z/OppoPods](https://github.com/1812z/OppoPods).
-
-### Features
-
-- Battery display (L / R / Case, with charging status)
-- Wear detection (in-case / worn / removed)
-- ANC control (Off / Noise Cancelling / Adaptive / Transparency)
-- ANC sub-modes: Smart / Light / Medium / Deep (model-dependent)
-- Spatial sound toggle (Free4 / Air5 / Air5 Pro)
-- Spatial audio 3-mode: Off / Fixed / Head Tracking (X3)
-- Game mode (Standard / Compatible)
-- Dual-device connection toggle
-- Master EQ presets (model-adaptive, loaded from JSON)
-- Searchable device model override in Settings (137 devices, fuzzy search)
-- System tray: left-click toggle window, right-click function menu
-- Tray hover shows real-time battery
-- Win11-style battery toast on connection
-- Low battery / critical battery alert
-- Minimize to tray / Auto-start with Windows
-- Auto-reconnect on disconnection
-- Follows system light/dark theme + manual override
-
-### Requirements
-
-- Windows 10 / 11
-- .NET 10.0 Desktop Runtime ([Download](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)) — or use the self-contained `-NET` release which bundles the runtime
-- Bluetooth adapter + paired OPPO earbuds
-
-### Quick Start
-
-**Run directly:**
-
-Download from [Releases](https://github.com/Zhaoyi-ya/OPPO-Pods-For-Windows/releases):
-
-| File | Description |
-|------|-------------|
-| `OppoPodsWPF-NET.exe` | Self-contained, includes .NET 10 runtime (170+ MB) |
-| `OppoPodsWPF.exe` | Framework-dependent, requires .NET 10 installed (~7 MB) |
-
-**Build from source:**
-
-```bash
-git clone https://github.com/Zhaoyi-ya/OPPO-Pods-For-Windows.git
-cd OPPO-Pods-For-Windows
-dotnet run
-```
-
-**Publish single-file exe:**
-
-```bash
-# Self-contained (no .NET required)
-dotnet publish -c Release -r win-x64 --self-contained true -o publish
-
-# Framework-dependent (needs .NET 10)
-dotnet publish -c Release -r win-x64 --self-contained false -o publish
-```
-
-### Device Support
-
-The complete device whitelist (137 models) is in `DeviceModels.json`, synced from the official OPPO Melody App. Covers:
-
-| Brand | Models |
-|-------|--------|
-| OPPO | Enco Free / Air / X / R / Clip / Buds series |
-| OnePlus | Buds Pro / Nord Buds / Bullets Wireless series |
-| realme | Buds Air / Buds T / Buds Wireless / DIZO series |
-
-Key tested models:
-
-| Model | ANC | Adaptive | Spatial FX | 3D Audio | Dual Device | Master EQ |
-|:------|:---:|:---:|:---:|:---:|:---:|:---:|
-| Enco Free4 | ✅ | ✅ | ✅ | — | ✅ | ✅ |
-| Enco X3 | ✅ | — | — | ✅ | ✅ | ✅ |
-| Enco Air5 Pro | ✅ | ✅ | ✅ | — | ✅ | ✅ |
-| Enco Air4 Pro | ✅ | ✅ | — | — | ✅ | ✅ (tested) |
-| Enco Air2 Pro | ✅ | — | — | — | — | ✅ |
-
-Use the **searchable device selector** in Settings to manually override auto-detection if needed.
-
-### Project Structure
-
-```
-OPPO-Pods-For-Windows/
-├── OppoPodsWPF.csproj    # .NET 10 WPF + WinForms project
-├── App.xaml/.cs          # Entry point & theme
-├── MainWindow.xaml/.cs   # Main UI + tray + settings
-├── ToastWindow.xaml/.cs  # Connection / battery / disconnect toast
-├── OppoProtocol.cs       # OPPO RFCOMM protocol definitions
-├── RfcommService.cs      # Winsock2 Bluetooth connection & polling
-├── DeviceCapabilities.cs # Auto-detection from JSON + manual override
-├── DeviceModels.json     # Device whitelist (decompiled from OPPO Melody 16.8.1)
-├── EqModeNames.json      # EQ mode type → display name mapping (40+ modes)
-├── PodState.cs           # State data model
-└── Assets/               # Icons & images
-```
-
-### Acknowledgements
-
-- [Leaf-lsgtky/OppoPods](https://github.com/Leaf-lsgtky/OppoPods) — OPPO proprietary protocol reverse engineering
-- [1812z/OppoPods](https://github.com/1812z/OppoPods) — Feature implementation reference
-- [lepoco/wpfui](https://github.com/lepoco/wpfui) — Windows 11 Fluent Design UI framework
-- [@Dszsu](https://github.com/Dszsu) — Multi-device JSON adaptation & .NET 10 upgrade (PR #3)
-- [@yuanzexiong](https://github.com/yuanzexiong) — Enco Air4 Pro support (PR #2)
-
-### License
-
-GPL-3.0
+支持三大品牌共 **137 款设备**，能力按型号自动识别，界面只显示你的耳机真正支持的功能。
 
 ---
 
-## 中文
+## 目录
 
-Windows 桌面端 OPPO / OnePlus / realme 耳机蓝牙控制器，支持三大品牌共 **137 款设备**。
+- [功能](#功能)
+- [系统要求](#系统要求)
+- [安装使用](#安装使用)
+- [界面说明](#界面说明)
+- [支持的设备](#支持的设备)
+- [常见问题](#常见问题)
+- [维护](#维护)
+- [致谢](#致谢)
+- [开源协议](#开源协议)
 
-> `DeviceModels.json` 由 [@Dszsu](https://github.com/Dszsu) 逆向 OPPO 欢律 App v16.8.1 提取。设备能力基于白名单自动检测，设置中提供可搜索的手动型号覆盖。
->
-> **注意：** 目前仅 OPPO Enco Free4 和 Enco Air4 Pro 经真机测试，其余机型适配逻辑未经验证，不保证全部功能可用。
+---
 
-基于 [Leaf-lsgtky/OppoPods](https://github.com/Leaf-lsgtky/OppoPods) 逆向的 OPPO 私有 RFCOMM 协议，参考 [1812z/OppoPods](https://github.com/1812z/OppoPods) 的功能矩阵实现。
+## 功能
 
-### 功能
+### 电量与佩戴
+- **三路电量**：左耳 / 右耳 / 充电盒分别显示，带充电状态 ⚡
+- **佩戴检测**：入盒 / 佩戴 / 摘下 实时显示
+- **连接提示**：连接成功时桌面右下角弹出电量卡片，半透明、带滑入动画
+- **电量提醒**：低电量（≤20%）和极低电量（≤10%）自动弹窗提醒
 
-- 电量显示（左耳 / 右耳 / 充电盒 + 充电状态 ⚡）
-- 佩戴检测（入盒 / 佩戴 / 摘下）
-- 降噪控制（关闭 / 降噪 / 自适应 / 通透）
-- 降噪子模式：智能 / 轻度 / 中度 / 深度（按型号自适应）
-- 空间音效开关（Free4 / Air5 / Air5 Pro）
-- 空间音频三模式：关闭 / 固定 / 头部追踪（X3）
-- 游戏模式（标准 / 兼容两种实现）
-- 双设备连接开关
-- 大师调音 EQ（按型号从 JSON 加载）
-- 设置中可搜索手动覆盖设备型号（137 设备，模糊搜索）
-- 系统托盘常驻，左键切换显隐，右键功能菜单
-- 托盘悬浮提示实时电量
-- 连接时弹出 Win11 风格电量提示
-- 低电量 / 极低电量提醒
-- 关闭到托盘 / 开机自启
-- 断连自动重连
-- 跟随系统深浅色主题 + 手动切换
+### 降噪控制
+- **动态降噪模式**：按型号显示实际支持的主模式（关闭 / 降噪 / 通透 / 自适应）
+- **降噪子档位**：智能 / 深度 / 中度 / 轻度，按型号自动列出可选项
+- **智能切换实时档位**：选择"智能"模式时，显示设备毫秒级实时计算出的当前档位（如"实时计算：深度"），与官方 App 表现一致
 
-### 系统要求
+### 音效
+- **大师调音 EQ**：按型号加载可用预设，一键切换
+- **空间音效**：开关式空间声场
+- **空间音频三模式**：关闭 / 固定 / 头部追踪（支持的型号）；连接后自动读取耳机当前所选模式并同步勾选，重启也能正确还原
+- **游戏音效**：游戏场景专属音效开关（支持的型号），状态实时回读
+- **音效互斥**：游戏音效与空间音效互斥——开启其一会自动关闭另一个，与官方 App 行为一致
 
-- Windows 10 / 11
-- .NET 10.0 Desktop Runtime（[下载](https://dotnet.microsoft.com/zh-cn/download/dotnet/10.0)）— 或下载自带运行时的 `-NET` 版本
-- 蓝牙适配器 + 已配对的 OPPO 耳机
+### 其他控制
+- **游戏模式**：低延迟模式开关，支持标准与兼容两种实现
+- **双设备连接**：开关双设备同时连接
+- **多设备管理**：查看当前已连接的设备列表，一键切换活动设备
+- **设备信息**：固件版本、音频编解码器显示
+- **状态实时同步**：所有开关与模式都会持续从耳机回读真实状态，重启应用后自动还原，界面与耳机始终一致
 
-### 快速开始
+### 桌面体验
+- **系统托盘常驻**：左键点击开关主窗口，右键弹出功能菜单，鼠标悬浮显示实时电量
+- **关闭到托盘**：关闭窗口时最小化到托盘而非退出（可在设置开启）
+- **开机自启**：随 Windows 启动自动运行（可在设置开启）
+- **断连自动重连**：耳机断开后自动尝试重新连接
+- **主题**：跟随系统深浅色，也可手动切换深色 / 浅色
 
-**直接运行：**
+---
 
-从 [Releases](https://github.com/Zhaoyi-ya/OPPO-Pods-For-Windows/releases) 下载：
+## 系统要求
 
-| 文件 | 说明 |
+- **系统**：Windows 10 / 11（64 位）
+- **硬件**：蓝牙适配器 + 已配对的 OPPO / OnePlus / realme 耳机
+- **依赖**：自带运行时版本无需安装任何依赖，下载即用
+
+---
+
+## 安装使用
+
+1. 从 [Releases](https://github.com/Zhaoyi-ya/OPPO-Pods-For-Windows/releases) 下载最新版本
+2. 解压到任意目录
+3. **先在 Windows 蓝牙设置里完成耳机配对**（这一步很重要，程序不负责配对）
+4. 双击运行，程序会自动发现并连接已配对的耳机
+
+连接成功后，主界面即显示电量与各项控制。程序会记住你的设置（主题、型号覆盖、托盘/自启偏好等）。
+
+---
+
+## 界面说明
+
+主界面自上而下：
+
+| 区域 | 说明 |
 |------|------|
-| `OppoPodsWPF-NET.exe` | 自带 .NET 10 运行时，无需安装（170+ MB） |
-| `OppoPodsWPF.exe` | 需安装 .NET 10 Desktop Runtime（~7 MB） |
+| **设备列表** | 支持双设备的型号会显示，点开可查看已连接设备、切换活动设备 |
+| **电量** | 左耳 / 充电盒 / 右耳 三路电量与充电状态，下方显示佩戴状态 |
+| **降噪控制** | 主模式段选择器 + 子档位（按型号动态生成），智能模式下显示实时档位 |
+| **空间音频** | 三模式单选（支持的型号才显示），自动同步耳机当前所选模式 |
+| **功能** | 空间音效、游戏模式、游戏音效、双设备开关 + 大师调音 EQ 下拉（均按型号显示，状态实时回读）|
+| **底部状态栏** | 连接状态指示 + 重新连接按钮 |
 
-**从源码编译：**
+**设置页**：设备型号手动覆盖（可搜索）、自定义设备名称、游戏模式实现方式、主题、关闭到托盘、开机自启。
 
-```bash
-git clone https://github.com/Zhaoyi-ya/OPPO-Pods-For-Windows.git
-cd OPPO-Pods-For-Windows
-dotnet run
-```
+**关于页**：版本信息与致谢。
 
-**发布单文件 exe：**
+---
 
-```bash
-# 自带运行时（用户无需安装 .NET）
-dotnet publish -c Release -r win-x64 --self-contained true -o publish
+## 支持的设备
 
-# 依赖框架（需用户安装 .NET 10）
-dotnet publish -c Release -r win-x64 --self-contained false -o publish
-```
-
-### 设备支持
-
-完整设备白名单（137 款）位于 `DeviceModels.json`，数据同步自 OPPO 欢律 App。覆盖：
+覆盖三大品牌共 137 款设备，数据同步自官方 App：
 
 | 品牌 | 系列 |
 |------|------|
@@ -197,43 +108,49 @@ dotnet publish -c Release -r win-x64 --self-contained false -o publish
 | OnePlus | Buds Pro / Nord Buds / Bullets Wireless 系列 |
 | realme | Buds Air / Buds T / Buds Wireless / DIZO 系列 |
 
-经真机测试的重点型号：
+各型号支持的功能不同（是否有降噪子档位、空间音频、双设备、大师调音等），程序会**按型号自动显示可用功能**，不支持的功能不会出现在界面上。若自动识别不准，可在 **设置 → 设备型号** 里搜索并手动指定型号。
 
-| 型号 | 降噪 | 自适应 | 空间音效 | 空间音频 | 双设备 | 大师调音 |
-|:---|:---:|:---:|:---:|:---:|:---:|:---:|
-| Enco Free4 | ✅ | ✅ | ✅ | — | ✅ | ✅ |
-| Enco X3 | ✅ | — | — | ✅ | ✅ | ✅ |
-| Enco Air5 Pro | ✅ | ✅ | ✅ | — | ✅ | ✅ |
-| Enco Air4 Pro | ✅ | ✅ | — | — | ✅ | ✅ (已实测) |
-| Enco Air2 Pro | ✅ | — | — | — | — | ✅ |
+---
 
-若自动识别失败，可使用设置中的**可搜索设备选择器**手动覆盖。
+## 常见问题
 
-### 项目结构
+**Q：程序找不到我的耳机？**
+先确认耳机已在 Windows「设置 → 蓝牙和设备」里完成配对并处于连接状态。程序只连接已配对的设备，不负责配对流程。
 
-```
-OPPO-Pods-For-Windows/
-├── OppoPodsWPF.csproj    # .NET 10 WPF + WinForms 项目
-├── App.xaml/.cs          # 应用入口，主题设置
-├── MainWindow.xaml/.cs   # 主界面 + 托盘 + 设置
-├── ToastWindow.xaml/.cs  # 连接电量 / 低电量 / 断连提示弹窗
-├── OppoProtocol.cs       # OPPO RFCOMM 协议定义
-├── RfcommService.cs      # Winsock2 蓝牙连接与轮询
-├── DeviceCapabilities.cs # 从 JSON 自动检测 + 手动覆盖
-├── DeviceModels.json     # 设备白名单 (欢律 16.8.1 反编译)
-├── EqModeNames.json      # EQ modeType → 显示名称映射 (40+ 模式)
-├── PodState.cs           # 状态数据模型
-└── Assets/               # 图标 & 图片素材
-```
+**Q：连接上了但某些功能没显示？**
+界面按型号能力动态显示——你的耳机不支持的功能（如没有空间音频、没有降噪子档位）不会出现。若确认型号识别错误，去设置里手动选对型号。
 
-### 致谢
+**Q：显示的型号不对 / 功能不全？**
+在 **设置 → 设备型号** 里用搜索框找到你的准确型号手动指定即可。
+
+**Q：降噪档位名称和官方 App 不一样？**
+降噪档位命名（智能 / 深度 / 中度 / 轻度）与官方一致；"智能"模式会随环境实时切换档位，界面会显示当前实时计算出的档位。
+
+**Q：为什么开了游戏音效，空间音效就自动关了（反之亦然）？**
+这是设计如此。游戏音效与空间音效在耳机上互斥，同一时间只能生效一个——开启其中一个时，程序会自动关闭另一个并下发到耳机，与官方 App 表现一致。
+
+**Q：开关状态和耳机实际不一致 / 重启后还原错误？**
+程序会持续从耳机回读真实状态（空间音频模式、游戏音效、游戏模式、双设备等），重启应用后按耳机当前状态自动还原。若短时间内看到状态跳动，是回读与你的操作在同步，稍等即可稳定。
+
+**Q：关闭窗口后程序还在运行？**
+若开启了"关闭到托盘"，关闭窗口只是最小化到系统托盘，右键托盘图标可退出。
+
+---
+
+## 维护
+
+- [@Zhaoyi-ya](https://github.com/Zhaoyi-ya)
+- [@Dszsu](https://github.com/Dszsu)
+
+---
+
+## 致谢
 
 - [Leaf-lsgtky/OppoPods](https://github.com/Leaf-lsgtky/OppoPods) — OPPO 耳机私有协议逆向
 - [1812z/OppoPods](https://github.com/1812z/OppoPods) — 功能实现参考
-- [lepoco/wpfui](https://github.com/lepoco/wpfui) — Windows 11 Fluent Design UI 框架
-- [@Dszsu](https://github.com/Dszsu) — 多设备 JSON 适配 & .NET 10 升级 (PR #3)
-- [@yuanzexiong](https://github.com/yuanzexiong) — Enco Air4 Pro 支持 (PR #2)
 
-### 开源协议
+---
+
+## 开源协议
 
 GPL-3.0

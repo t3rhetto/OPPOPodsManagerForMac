@@ -1,9 +1,10 @@
-using System;
+﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace OppoPodsWPF;
+namespace OppoPodsManager;
 
 /// <summary>已连接设备信息（多设备连接列表中的一项）</summary>
 public class ConnectedDeviceInfo : INotifyPropertyChanged
@@ -18,12 +19,12 @@ public class ConnectedDeviceInfo : INotifyPropertyChanged
     public bool IsCurrentDevice
     {
         get => _isCurrentDevice;
-        set { if (_isCurrentDevice != value) { _isCurrentDevice = value; OnChanged(nameof(IsCurrentDevice)); OnChanged(nameof(DisplayName)); } }
+        set { if (_isCurrentDevice != value) { _isCurrentDevice = value; OnChanged(); OnChanged(nameof(DisplayName)); } }
     }
 
     public bool IsMainAudioDevice { get; set; }
 
-    /// <summary>显示名称（当前设备加 ✓ 标记；UI ItemTemplate 改用 IsCurrentDevice 独立显示 ✓）</summary>
+    /// <summary>显示名称</summary>
     public string ConnectionStatus => ConnectionState switch
     {
         2 => IsCurrentDevice ? "当前设备" : "已连接",
@@ -34,20 +35,33 @@ public class ConnectedDeviceInfo : INotifyPropertyChanged
     public string DisplayName => DeviceName;
 
     public event PropertyChangedEventHandler? PropertyChanged;
-    private void OnChanged([CallerMemberName] string? n = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
+    private void OnChanged([CallerMemberName] string? n = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
 }
 
 public class PodState
 {
-    public Dictionary<string, (int Level, bool Charging)?> Battery { get; } = new();
+    // 后台线程写、UI 线程读，用并发字典避免竞态崩溃
+    public ConcurrentDictionary<string, (int Level, bool Charging)?> Battery { get; } = new();
     public string AncMode { get; set; } = "?";
+
+    /// <summary>智能切换模式下，设备实时计算出的当前档位名（如"深度"）；非智能模式为空。</summary>
+    public string IntelligentRealtime { get; set; } = "";
+
     public string EqPreset { get; set; } = "?";
+
+    /// <summary>远程固件版本（0x8105 响应）；未知为空。</summary>
+    public string FirmwareVersion { get; set; } = "";
+
+    /// <summary>当前音频编解码器 id（0x8114 响应）；未知为 -1。</summary>
+    public int CodecType { get; set; } = -1;
     public string WearingL { get; set; } = "";
     public string WearingR { get; set; } = "";
     public bool Connected { get; set; }
     public bool SpatialSound { get; set; }
     public string SpatialMode { get; set; } = "Off";
     public bool GameMode { get; set; }
+    public bool GameSound { get; set; }   // 游戏音效（0x812B selectType != 0）
     public bool DualDevice { get; set; }
 
     /// <summary>多设备连接列表（由主动轮询同步）</summary>
@@ -56,4 +70,3 @@ public class PodState
     /// <summary>多设备列表最近更新时间</summary>
     public DateTime MultiConnectListUpdatedAt { get; set; } = DateTime.MinValue;
 }
-

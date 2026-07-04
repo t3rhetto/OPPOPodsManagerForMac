@@ -1,0 +1,75 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- 平台后端判定：有 RID 看 RID，否则看构建主机；可用 /p:EnableWindowsBackend=true 强制。
+       需先于 TargetFramework 计算，以便据此选择 Windows 专属 TFM（WinRT/BLE 依赖）。 -->
+  <PropertyGroup>
+    <EnableWindowsBackend Condition="'$(EnableWindowsBackend)' == '' and $(RuntimeIdentifier.StartsWith('win'))">true</EnableWindowsBackend>
+    <EnableWindowsBackend Condition="'$(EnableWindowsBackend)' == '' and '$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">true</EnableWindowsBackend>
+    <EnableWindowsBackend Condition="'$(EnableWindowsBackend)' == ''">false</EnableWindowsBackend>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- Windows 后端使用 windows TFM 以启用 WinRT (Windows.Devices.Bluetooth GATT)；
+         其它平台保持纯 net10.0，便于后续 Linux/macOS 后端。 -->
+    <TargetFramework Condition="'$(EnableWindowsBackend)' == 'true'">net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetFramework Condition="'$(EnableWindowsBackend)' != 'true'">net10.0</TargetFramework>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <Nullable>enable</Nullable>
+    <RootNamespace>OppoPodsManager</RootNamespace>
+    <AssemblyName>OppoPodsManager</AssemblyName>
+    <ApplicationIcon>Assets\tuopan.ico</ApplicationIcon>
+    <SupportedOSPlatformVersion Condition="'$(EnableWindowsBackend)' == 'true'">10.0.19041.0</SupportedOSPlatformVersion>
+    <NoWarn>CA1416</NoWarn>
+    <PublishAot>true</PublishAot>
+    <SelfContained>true</SelfContained>
+    <StripSymbols>true</StripSymbols>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <DebuggerSupport>false</DebuggerSupport>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <!-- 启用 Windows 后端时定义 WINDOWS 编译符号 -->
+  <PropertyGroup Condition="'$(EnableWindowsBackend)' == 'true'">
+    <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
+  </PropertyGroup>
+
+  <!-- 非 Windows 目标：把 Windows 专属源码排除出编译 -->
+  <ItemGroup Condition="'$(EnableWindowsBackend)' != 'true'">
+    <Compile Remove="Transport\Windows\**\*.cs" />
+  </ItemGroup>
+
+  <!-- Embedded JSON data（保持 LogicalName 与代码里 GetManifestResourceStream 的名称一致）-->
+  <ItemGroup>
+    <EmbeddedResource Include="Data\DeviceModels.json" LogicalName="OppoPodsManager.DeviceModels.json" />
+    <EmbeddedResource Include="Data\EqModeNames.json" LogicalName="OppoPodsManager.EqModeNames.json" />
+  </ItemGroup>
+
+  <!-- Avalonia assets -->
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <!-- Avalonia + SukiUI packages -->
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.0.5" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.0.5" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.5" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.5" />
+    <PackageReference Include="SukiUI" Version="7.0.1" />
+  </ItemGroup>
+
+<Target Name="RemovePdbAfterPublish" AfterTargets="Publish">
+  <PropertyGroup>
+    <!-- 如果 PublishDir 未定义，则根据常用路径构造 -->
+    <_PublishDir Condition="'$(PublishDir)' == ''">$(OutputPath)$(Platform)\$(TargetFramework)\$(RuntimeIdentifier)\publish\</_PublishDir>
+    <_PublishDir Condition="'$(PublishDir)' != ''">$(PublishDir)</_PublishDir>
+    <!-- 确保以反斜杠结尾 -->
+    <_PublishDir Condition="!HasTrailingSlash('$(_PublishDir)')">$(_PublishDir)\</_PublishDir>
+  </PropertyGroup>
+  <!-- 删除所有 .pdb -->
+  <Exec Command="del /f /q &quot;$(_PublishDir)*.pdb&quot;" IgnoreExitCode="true" />
+  <!-- 可选：显示删除结果 -->
+  <Message Text="Deleted .pdb files from $(_PublishDir)" Importance="High" />
+</Target>
+</Project>
