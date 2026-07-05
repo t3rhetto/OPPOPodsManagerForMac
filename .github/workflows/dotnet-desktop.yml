@@ -1,0 +1,110 @@
+name: Build (Windows x64)
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PROJECT: OppoPodsManager.csproj
+  DOTNET_VERSION: "10.0.x"
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 普通单文件版：依赖框架，需目标机安装 .NET 10 运行时，裸 exe
+          - variant: single-file
+            pack: exe
+            args: "--self-contained false -p:PublishSingleFile=true -p:PublishAot=false -p:IncludeNativeLibrariesForSelfExtract=true"
+          # 自包含单文件版：内置运行时，免安装 → 裸 exe
+          - variant: self-contained
+            pack: exe
+            args: "--self-contained true -p:PublishSingleFile=true -p:PublishAot=false -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=false -p:PublishTrimmed=true"
+          # AOT 原生编译版：主 exe + 多个原生 DLL（Skia/HarfBuzz/ANGLE）→ 打包 zip
+          - variant: aot
+            pack: zip
+            args: "-p:PublishAot=true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Publish (${{ matrix.variant }})
+        shell: pwsh
+        run: >
+          dotnet publish $env:PROJECT
+          -c Release
+          -r win-x64
+          -o "publish/${{ matrix.variant }}"
+          ${{ matrix.args }}
+
+      - name: Package (${{ matrix.variant }})
+        shell: pwsh
+        run: |
+          $dir = "publish/${{ matrix.variant }}"
+          if ("${{ matrix.pack }}" -eq "zip") {
+            # AOT：多文件，整目录打 zip
+            $out = "OppoPodsManager-${{ matrix.variant }}-win-x64.zip"
+            Compress-Archive -Path "$dir/*" -DestinationPath $out -Force
+          } else {
+            # 单文件版：只取主 exe，删掉可能残留的 .pdb 后直接作为附件
+            $out = "OppoPodsManager-${{ matrix.variant }}-win-x64.exe"
+            $exe = Get-ChildItem -Path $dir -Filter "OppoPodsManager.exe" -Recurse | Select-Object -First 1
+            Copy-Item $exe.FullName -Destination $out -Force
+          }
+          "ASSET_NAME=$out" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: OppoPodsManager-${{ matrix.variant }}-win-x64
+          path: ${{ env.ASSET_NAME }}
+          retention-days: 14
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: dist
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: OPPO Pods For Windows ${{ github.ref_name }}
+          files: dist/**/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          body: |
+            ### 下载说明
+
+            | 版本 | 说明 |
+            |---|---|
+            | **普通版 exe** | 体积最小，需先安装 [.NET 10 运行时](https://dotnet.microsoft.com/download/dotnet/10.0) |
+            | **自包含版 exe** | 免安装，双击即用，内置运行时，性能略低 |
+            | **AOT 版 zip** | 原生编译，启动最快、内存最省；解压后所有文件需放在同一目录 |
+
+            ---
