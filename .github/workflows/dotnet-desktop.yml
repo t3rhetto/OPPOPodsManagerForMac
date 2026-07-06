@@ -15,24 +15,23 @@ env:
   DOTNET_VERSION: "10.0.x"
   DOTNET_NOLOGO: "true"
   DOTNET_CLI_TELEMETRY_OPTOUT: "true"
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
     runs-on: windows-latest
+
     strategy:
       fail-fast: false
       matrix:
         include:
-          # 普通单文件版：依赖框架，需目标机安装 .NET 10 运行时，裸 exe（启用裁剪）
           - variant: single-file
             pack: exe
             args: "--self-contained false -p:PublishSingleFile=true -p:PublishAot=false -p:IncludeNativeLibrariesForSelfExtract=true"
-          # 自包含单文件版：内置运行时，免安装 → 裸 exe
+
           - variant: self-contained
             pack: exe
             args: "--self-contained true -p:PublishSingleFile=true -p:PublishAot=false -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=false -p:PublishTrimmed=true"
-          # AOT 原生编译版：主 exe + 多个原生 DLL → 打包 zip
+
           - variant: aot
             pack: zip
             args: "-p:PublishAot=true"
@@ -48,6 +47,14 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
       - name: Publish (${{ matrix.variant }})
         shell: pwsh
         run: >
@@ -57,10 +64,13 @@ jobs:
           -o "publish/${{ matrix.variant }}"
           ${{ matrix.args }}
 
+  
       - name: Package (${{ matrix.variant }})
+        id: package
         shell: pwsh
         run: |
           $dir = "publish/${{ matrix.variant }}"
+
           if ("${{ matrix.pack }}" -eq "zip") {
             $out = "OppoPodsManager-${{ matrix.variant }}-win-x64.zip"
             Compress-Archive -Path "$dir/*" -DestinationPath $out -Force
@@ -69,22 +79,24 @@ jobs:
             $exe = Get-ChildItem -Path $dir -Filter "OppoPodsManager.exe" -Recurse | Select-Object -First 1
             Copy-Item $exe.FullName -Destination $out -Force
           }
-          "ASSET_NAME=$out" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+          echo "asset=$out" >> $env:GITHUB_OUTPUT
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: OppoPodsManager-${{ matrix.variant }}-win-x64
-          path: ${{ env.ASSET_NAME }}
+          path: ${{ steps.package.outputs.asset }}
           retention-days: 14
 
   release:
     needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
+
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           path: dist
 
@@ -101,8 +113,6 @@ jobs:
 
             | 版本 | 说明 |
             |---|---|
-            | **普通版 exe（single-file）** | 需先安装 [.NET 10 运行时](https://dotnet.microsoft.com/download/dotnet/10.0) |
-            | **自包含版 exe（self-contained）** | 免安装，双击即用，内置运行时，性能略低 |
-            | **AOT 版 zip（aot）** | 原生编译，性能最佳；解压后所有文件需放在同一目录 |
-
-            ---
+            | **普通版 exe（single-file）** | 需安装 .NET 运行时 |
+            | **自包含版 exe（self-contained）** | 免安装 |
+            | **AOT 版 zip（aot）** | 原生编译性能最佳 |
