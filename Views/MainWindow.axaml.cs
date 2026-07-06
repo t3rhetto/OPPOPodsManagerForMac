@@ -476,10 +476,21 @@ public partial class MainWindow : SukiWindow
     {
         try
         {
+            using var runKey = Microsoft.Win32.Registry.CurrentUser
+                .OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
+            if (runKey is null) return;
+
             if (CbAuto.IsChecked == true)
-                SettingsManager.SetString("AutoStartPath", Environment.ProcessPath);
+            {
+                SettingsManager.SetBool("AutoStart", true);
+                var exe = Environment.ProcessPath ?? "";
+                runKey.SetValue("OPPOPods", $"\"{exe}\" --minimized");
+            }
             else
-                SettingsManager.SetString("AutoStartPath", null);
+            {
+                SettingsManager.SetBool("AutoStart", false);
+                try { runKey.DeleteValue("OPPOPods", throwOnMissingValue: false); } catch { }
+            }
         }
         catch { }
     }
@@ -992,6 +1003,13 @@ public partial class MainWindow : SukiWindow
 
     private void RefreshThemeColors()
     {
+        // 浅色模式 SukiUI 资源覆盖
+        if (_isLightTheme)
+        {
+            Resources["SukiBackground"] = new SolidColorBrush(Color.FromRgb(0xE5, 0xE5, 0xEA));
+            Resources["SukiCardBackground"] = new SolidColorBrush(Colors.White);
+        }
+
         // 窗口背景：浅色微灰，深色透明
         Background = _isLightTheme
             ? new SolidColorBrush(Color.FromRgb(0xE5, 0xE5, 0xEA))
