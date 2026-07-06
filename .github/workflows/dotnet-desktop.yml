@@ -3,8 +3,10 @@ name: Build (Windows x64)
 on:
   push:
     tags: [ "v*" ]
+  pull_request:
+    types: [ opened, synchronize, reopened ]
   workflow_dispatch:
-  
+
 permissions:
   contents: write
 
@@ -14,7 +16,6 @@ env:
   DOTNET_NOLOGO: "true"
   DOTNET_CLI_TELEMETRY_OPTOUT: "true"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  ASSET_NAME: ""
 
 jobs:
   build:
@@ -23,15 +24,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # 普通单文件版：依赖框架，需目标机安装 .NET 10 运行时，裸 exe
+          # 普通单文件版：依赖框架，需目标机安装 .NET 10 运行时，裸 exe（启用裁剪）
           - variant: single-file
             pack: exe
-            args: "--self-contained false -p:PublishSingleFile=true -p:PublishAot=false -p:IncludeNativeLibrariesForSelfExtract=true"
+            args: "--self-contained false -p:PublishSingleFile=true -p:PublishAot=false -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=true"
           # 自包含单文件版：内置运行时，免安装 → 裸 exe
           - variant: self-contained
             pack: exe
             args: "--self-contained true -p:PublishSingleFile=true -p:PublishAot=false -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=false -p:PublishTrimmed=true"
-          # AOT 原生编译版：主 exe + 多个原生 DLL（Skia/HarfBuzz/ANGLE）→ 打包 zip
+          # AOT 原生编译版：主 exe + 多个原生 DLL → 打包 zip
           - variant: aot
             pack: zip
             args: "-p:PublishAot=true"
@@ -61,11 +62,9 @@ jobs:
         run: |
           $dir = "publish/${{ matrix.variant }}"
           if ("${{ matrix.pack }}" -eq "zip") {
-            # AOT：多文件，整目录打 zip
             $out = "OppoPodsManager-${{ matrix.variant }}-win-x64.zip"
             Compress-Archive -Path "$dir/*" -DestinationPath $out -Force
           } else {
-            # 单文件版：只取主 exe，删掉可能残留的 .pdb 后直接作为附件
             $out = "OppoPodsManager-${{ matrix.variant }}-win-x64.exe"
             $exe = Get-ChildItem -Path $dir -Filter "OppoPodsManager.exe" -Recurse | Select-Object -First 1
             Copy-Item $exe.FullName -Destination $out -Force
