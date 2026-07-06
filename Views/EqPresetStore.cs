@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace OppoPodsManager;
 
@@ -27,6 +28,10 @@ public sealed class EqPresetItem
     public bool IsCustom { get; set; }
 }
 
+/// <summary>AOT 源生成 JSON 序列化上下文。</summary>
+[JsonSerializable(typeof(List<CustomEqPreset>))]
+internal partial class EqPresetContext : JsonSerializerContext { }
+
 /// <summary>
 /// 自定义 EQ 预设持久化存储。
 /// 文件位置：%APPDATA%\OppoPodsWin\CustomEq.json
@@ -47,7 +52,7 @@ public static class EqPresetStore
             if (File.Exists(FilePath))
             {
                 var json = File.ReadAllText(FilePath);
-                _cache = JsonSerializer.Deserialize<List<CustomEqPreset>>(json) ?? new();
+                _cache = JsonSerializer.Deserialize(json, EqPresetContext.Default.ListCustomEqPreset) ?? new();
             }
             else
             {
@@ -68,7 +73,7 @@ public static class EqPresetStore
             var dir = Path.GetDirectoryName(FilePath);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
-            var json = JsonSerializer.Serialize(_cache ?? new());
+            var json = JsonSerializer.Serialize(_cache ?? new(), EqPresetContext.Default.ListCustomEqPreset);
             File.WriteAllText(FilePath, json);
         }
         catch { /* 静默失败，不影响主流程 */ }

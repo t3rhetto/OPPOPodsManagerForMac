@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -133,6 +134,7 @@ public partial class MainWindow : SukiWindow
         CbDualDevice.IsCheckedChanged += CbDualDevice_Changed;
         CbTray.IsCheckedChanged += CbTray_Changed;
         CbAuto.IsCheckedChanged += CbAuto_Changed;
+        CbAutoUpdate.IsCheckedChanged += CbAutoUpdate_Changed;
         CbEq.SelectionChanged += CbEq_SelectionChanged;
         CbBrand.SelectionChanged += CbBrand_Changed;
         CbSeries.SelectionChanged += CbSeries_Changed;
@@ -150,6 +152,12 @@ public partial class MainWindow : SukiWindow
         EqSlider16k.PropertyChanged += EqSlider_Changed;
         // EQ 预设列表
         LbEqPresets.SelectionChanged += LbEqPresets_SelectionChanged;
+
+        // 设备详情 — 音效增强互斥
+        DiEnhanceNone.IsCheckedChanged += DiEnhance_Changed;
+        DiEnhanceSpatial.IsCheckedChanged += DiEnhance_Changed;
+        DiEnhanceGame.IsCheckedChanged += DiEnhance_Changed;
+        DiEnhanceEq.IsCheckedChanged += DiEnhance_Changed;
 
         // 初始加载自定义 EQ 预设列表
         RefreshEqPresetList();
@@ -201,6 +209,9 @@ public partial class MainWindow : SukiWindow
             CbEq.Items.Add(name);
         CbTray.IsChecked = SettingsManager.GetBool("TrayEnabled", false);
         CbAuto.IsChecked = SettingsManager.GetBool("AutoStart", false);
+        // 用 SetString/GetString 避免 SetBool(false) 删除条目导致默认值恢复
+        var autoUpdate = SettingsManager.GetString("AutoCheckUpdate");
+        CbAutoUpdate.IsChecked = autoUpdate != "false"; // 首次 null → true
 
         // 设备型号选择
         _allModelNames = DeviceCapabilities.GetModelNames();
@@ -248,6 +259,7 @@ public partial class MainWindow : SukiWindow
         Closing += OnWindowClosing;
         Closed += (_, _) => { _pollCts?.Cancel(); _pods.Dispose(); };
         _ = ConnectAsync();
+        _ = CheckForUpdateAsync(); // 后台检查更新
         }
         catch (Exception ex)
         {
@@ -414,6 +426,9 @@ public partial class MainWindow : SukiWindow
             if (s.DualDevice != _prevDualDevice) { _prevDualDevice = s.DualDevice; SetDualDeviceCheckedSilent(s.DualDevice); }
         }
 
+        if (DeviceInfoPanel.IsVisible) RefreshDeviceInfo();
+        if (EqPanel.IsVisible && LbEqPresets.ItemCount == 0) RefreshEqPresetList();
+
         BuildAncUi(caps);
         AncPanel.IsVisible = caps.AncOptions.Count > 0;
         SpatialAudioPanel.IsVisible = caps.HasSpatialAudio;
@@ -457,6 +472,8 @@ public partial class MainWindow : SukiWindow
         }
         catch { }
     }
+    private void CbAutoUpdate_Changed(object? s, Avalonia.Interactivity.RoutedEventArgs e)
+        => SettingsManager.SetString("AutoCheckUpdate", CbAutoUpdate.IsChecked == true ? "true" : "false");
 
     /// <summary>按当前型号 caps.AncOptions 动态生成主/子模式圆形图标按钮（型号不变则跳过重建）。</summary>
     private void BuildAncUi(DeviceCapabilities caps)
@@ -976,6 +993,7 @@ public partial class MainWindow : SukiWindow
 
         UpdateGlassCards(MainPanel, glassBg);
         UpdateGlassCards(EqPanel, glassBg);
+        UpdateGlassCards(DeviceInfoPanel, glassBg);
         UpdateGlassCards(SettingsPanel, glassBg);
         UpdateGlassCards(AboutPanel, glassBg);
 
@@ -1025,25 +1043,33 @@ public partial class MainWindow : SukiWindow
 
     private void NavHome_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e) => ShowPage("home");
     private void NavEq_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e) => ShowPage("eq");
+    private void NavDeviceInfo_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e) => ShowPage("deviceinfo");
     private void NavSettings_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e) => ShowPage("settings");
 
     private void ShowPage(string page)
     {
         MainPanel.IsVisible = page == "home";
         EqPanel.IsVisible = page == "eq";
+        DeviceInfoPanel.IsVisible = page == "deviceinfo";
         SettingsPanel.IsVisible = page == "settings";
         AboutPanel.IsVisible = page == "about";
 
         NavHome.Classes.Remove("selected");
         NavEq.Classes.Remove("selected");
+        NavDeviceInfo.Classes.Remove("selected");
         NavSettings.Classes.Remove("selected");
 
         if (page == "home") NavHome.Classes.Add("selected");
         else if (page == "eq") NavEq.Classes.Add("selected");
+        else if (page == "deviceinfo") NavDeviceInfo.Classes.Add("selected");
         else NavSettings.Classes.Add("selected");
+
+        if (page == "deviceinfo") RefreshDeviceInfo();
+        if (page == "eq") RefreshEqPresetList();
     }
 
     private void About_Click(object? s, RoutedEventArgs e) => ShowPage("about");
+    private void AboutBack_Click(object? s, RoutedEventArgs e) => ShowPage("settings");
 
     private void OpenUrl_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -1105,7 +1131,7 @@ public partial class MainWindow : SukiWindow
 
         if (item.IsCustom)
         {
-            // 自定义：加载存储的 EQ 曲线到滑块
+            ApplyEqReadonly(false);
             var preset = EqPresetStore.Find(item.Name);
             if (preset != null)
             {
@@ -1120,7 +1146,8 @@ public partial class MainWindow : SukiWindow
         }
         else
         {
-            // 内置：发送到设备切换（与主页大师调音行为一致）
+            ApplyEqReadonly(true);
+            SetAllEqSliders(0);
             if (_pods.IsConnected)
             {
                 Log.D("UI", $"EQ面板: 切换内置预设 -> {item.Name}");
@@ -1134,6 +1161,18 @@ public partial class MainWindow : SukiWindow
 
     private bool IsBuiltinPreset(string name) =>
         _pods.Caps.EqPresets.ContainsKey(name);
+
+    private void ApplyEqReadonly(bool readOnly)
+    {
+        var opacity = readOnly ? 0.35 : 1.0;
+        EqSlider62.IsEnabled = !readOnly; EqSlider62.Opacity = opacity;
+        EqSlider250.IsEnabled = !readOnly; EqSlider250.Opacity = opacity;
+        EqSlider1k.IsEnabled = !readOnly; EqSlider1k.Opacity = opacity;
+        EqSlider4k.IsEnabled = !readOnly; EqSlider4k.Opacity = opacity;
+        EqSlider8k.IsEnabled = !readOnly; EqSlider8k.Opacity = opacity;
+        EqSlider16k.IsEnabled = !readOnly; EqSlider16k.Opacity = opacity;
+        BtnEqSave.IsEnabled = !readOnly;
+    }
 
     private void SetAllEqSliders(double value)
     {
@@ -1203,10 +1242,98 @@ public partial class MainWindow : SukiWindow
         EqHintText.Text = isNew ? $"已创建预设「{name}」" : $"已保存预设「{name}」";
     }
 
+    // ---- 设备详情 ----
+
+    /// <summary>刷新设备详情页（固件、编解码器、音效增强）。</summary>
+    private void RefreshDeviceInfo()
+    {
+        var caps = _modelOverride != null
+            ? DeviceCapabilities.ForceModel(_modelOverride)
+            : _pods.Caps;
+
+        DiDeviceName.Text = caps.ModelName;
+        DiFirmware.Text = FormatFirmware(_pods.State.FirmwareVersion);
+        DiCodec.Text = CodecName(_pods.State.CodecType);
+
+        // 音效增强互斥组
+        bool showSpatial = caps.HasSpatialSound;
+        bool showGame = caps.HasGameSound;
+        bool showEq = caps.EqPresets.Count > 0;
+        bool hasMutex = caps.GameSoundMutexes.Count > 0;
+
+        DiEnhanceNone.IsVisible = hasMutex;
+        DiEnhanceSpatial.IsVisible = showSpatial && hasMutex;
+        DiEnhanceGame.IsVisible = showGame && hasMutex;
+        DiEnhanceEq.IsVisible = showEq && hasMutex;
+        DiEnhanceHint.Text = hasMutex
+            ? "以下音效互斥，同一时间只能启用一个"
+            : "当前设备不支持音效互斥";
+
+        // 刷新选中态
+        _diEnhanceSuppress = true;
+        var current = _pods.CurrentEnhancement();
+        DiEnhanceNone.IsChecked = current == AudioEnhancement.None;
+        DiEnhanceSpatial.IsChecked = current == AudioEnhancement.SpatialSound;
+        DiEnhanceGame.IsChecked = current == AudioEnhancement.GameSound;
+        DiEnhanceEq.IsChecked = current == AudioEnhancement.Eq;
+        _diEnhanceSuppress = false;
+    }
+
+    /// <summary>固件版本 CSV → 显示格式：138.138.105。</summary>
+    private static string FormatFirmware(string raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return "-";
+        var parts = raw.Split(',');
+        if (parts.Length < 3) return raw;
+
+        var versions = new Dictionary<int, string>();
+        for (int i = 0; i + 2 < parts.Length; i += 3)
+        {
+            if (int.TryParse(parts[i], out var devType) && int.TryParse(parts[i + 2], out var val))
+                versions[devType] = val.ToString();
+        }
+        // 按设备类型排序输出
+        var ordered = versions.OrderBy(kv => kv.Key).Select(kv => kv.Value);
+        return string.Join(".", ordered);
+    }
+
+    private static string CodecName(int id) => id switch
+    {
+        0 => "SBC",
+        1 => "AAC",
+        2 => "LDAC",
+        3 => "LHDC",
+        4 => "LC3",
+        5 => "aptX",
+        6 => "aptX HD",
+        7 => "aptX Adaptive",
+        8 => "SSC (Samsung)",
+        -1 => "-",
+        _ => $"未知 ({id})"
+    };
+
+    private bool _diEnhanceSuppress;
+    private void DiEnhance_Changed(object? s, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_diEnhanceSuppress || !_pods.IsConnected) return;
+        if (s is not RadioButton rb || rb.IsChecked != true) return;
+
+        AudioEnhancement mode;
+        if (rb == DiEnhanceNone) mode = AudioEnhancement.None;
+        else if (rb == DiEnhanceSpatial) mode = AudioEnhancement.SpatialSound;
+        else if (rb == DiEnhanceGame) mode = AudioEnhancement.GameSound;
+        else if (rb == DiEnhanceEq) mode = AudioEnhancement.Eq;
+        else return;
+
+        Log.D("UI", $"音效增强切换 -> {mode}");
+        _pods.SetAudioEnhancement(mode);
+    }
+
     // ---- 浮层对话框（Avalonia 原生遮罩，不创建新窗口）----
 
     private TaskCompletionSource<string?>? _promptTcs;
     private TaskCompletionSource<bool>? _confirmTcs;
+    private string _updatePendingVersion = ""; // 当前提示的新版本号，供跳过使用
 
     /// <summary>浮层命名输入。</summary>
     private async Task<string?> ShowPromptDialog(string title, string defaultText = "")
@@ -1248,16 +1375,29 @@ public partial class MainWindow : SukiWindow
         return await _confirmTcs.Task;
     }
 
-    private void DialogCancel_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
+    private void DialogSkip_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        SettingsManager.SetString("SkippedVersion", _updatePendingVersion);
+        DialogOverlay_Close();
+        _confirmTcs?.TrySetResult(false);
+    }
+
+    private void DialogOverlay_Close()
     {
         DialogOverlay.IsVisible = false;
+        DialogSkipBtn.IsVisible = false;
+    }
+
+    private void DialogCancel_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        DialogOverlay_Close();
         _promptTcs?.TrySetResult(null);
         _confirmTcs?.TrySetResult(false);
     }
 
     private void DialogConfirm_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        DialogOverlay.IsVisible = false;
+        DialogOverlay_Close();
 
         if (_promptTcs != null)
         {
@@ -1316,11 +1456,6 @@ public partial class MainWindow : SukiWindow
         CbGameSound.IsChecked = false;
     }
 
-    private void BtnDeviceList_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        // 已移除，改用 ComboBox
-    }
-
     private void OnWindowClosing(object? s, WindowClosingEventArgs e)
     {
         if (_realClose || CbTray.IsChecked != true) return;
@@ -1334,13 +1469,14 @@ public partial class MainWindow : SukiWindow
         DeviceList.Items.Clear();
 
         var all = _pods.State.ConnectedDevices.ToList();
+        var caps = _modelOverride != null
+            ? DeviceCapabilities.ForceModel(_modelOverride)
+            : _pods.Caps;
+        var canManage = caps.HasMultiConnectManage;
 
         // 无设备且已连接时，用型号名填充
         if (all.Count == 0 && _pods.State.Connected)
         {
-            var caps = _modelOverride != null
-                ? DeviceCapabilities.ForceModel(_modelOverride)
-                : _pods.Caps;
             all.Add(new ConnectedDeviceInfo
             {
                 Address = "current",
@@ -1350,25 +1486,48 @@ public partial class MainWindow : SukiWindow
             });
         }
 
+        // 自动模式提示
+        if (canManage && _pods.State.MultiConnectAutoMode && all.Count > 1)
+        {
+            var autoHint = new TextBlock
+            {
+                Text = "（自动切换模式）",
+                FontSize = 10,
+                Opacity = 0.35,
+                Margin = new Thickness(14, 0, 0, 4),
+                Foreground = BrushLightGreen,
+            };
+            DeviceList.Items.Add(autoHint);
+        }
+
         foreach (var d in all)
         {
+            // 连接状态圆点
+            var dotColor = d.ConnectionState switch { 2 => BrushGreen, 1 => BrushGray, _ => BrushRed };
             var dot = new Ellipse { Width = 8, Height = 8, Margin = new Thickness(0, 0, 6, 0),
-                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-            dot.Fill = d.ConnectionState switch { 2 => BrushGreen, 1 => BrushGray, _ => BrushRed };
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Fill = dotColor };
 
+            // 设备名
             var nameTb = new TextBlock { Text = d.DeviceName, FontSize = 12,
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-            if (d.IsCurrentDevice) nameTb.Foreground = BrushLightGreen;
+            if (d.IsCurrentDevice)
+                nameTb.Foreground = BrushLightGreen;
 
             var row = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Margin = new Thickness(4, 3) };
             row.Children.Add(dot);
             row.Children.Add(nameTb);
 
-            // 当前/音频活动设备标记
+            // 音频活动指示
+            if (d.IsAudioActive && !d.IsCurrentDevice)
+            {
+                var audioHint = new TextBlock { Text = " ♪", FontSize = 11, Opacity = 0.6,
+                    Foreground = BrushGreen, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+                row.Children.Add(audioHint);
+            }
             if (d.IsCurrentDevice)
             {
-                var note = new TextBlock { Text = "  ♪", FontSize = 10, Opacity = 0.5,
-                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+                var note = new TextBlock { Text = d.IsAudioActive ? "  ♪" : "", FontSize = 11, Opacity = 0.5,
+                    Foreground = BrushLightGreen, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
                 row.Children.Add(note);
             }
 
@@ -1384,19 +1543,67 @@ public partial class MainWindow : SukiWindow
             if (d.IsCurrentDevice)
                 border.Background = new SolidColorBrush(Color.FromArgb(0x12, 0x4C, 0xAF, 0x50));
 
-            // 非当前设备可点击
-            if (!string.IsNullOrEmpty(d.Address) && d.Address != "current" && !d.IsCurrentDevice)
+            // 右键菜单 / 左键操作
+            var menu = new ContextMenu();
+            var isReal = !string.IsNullOrEmpty(d.Address) && d.Address != "current";
+
+            if (isReal && !d.IsCurrentDevice)
             {
+                if (d.ConnectionState != 2)
+                {
+                    // 已断开 → 连接
+                    var connect = new MenuItem { Header = $"连接「{d.DeviceName}」" };
+                    connect.Click += (_, _) => _pods.SendMultiConnectConnect(d.Address);
+                    menu.Items.Add(connect);
+                }
+                else
+                {
+                    // 已连接 → 切换音频 / 断开
+                    if (canManage)
+                    {
+                        var setPri = new MenuItem { Header = "切换音频到此设备" };
+                        setPri.Click += (_, _) => _pods.SendMultiConnectSetPriority(d.Address);
+                        menu.Items.Add(setPri);
+                        menu.Items.Add(new Separator());
+                    }
+                    var disconnect = new MenuItem { Header = $"断开「{d.DeviceName}」" };
+                    disconnect.Click += (_, _) => _pods.SendMultiConnectDisconnect(d.Address);
+                    menu.Items.Add(disconnect);
+                }
+                // 取消配对（所有非当前设备）
+                menu.Items.Add(new Separator());
+                var unpair = new MenuItem { Header = "取消配对" };
+                unpair.Click += (_, _) => _pods.SendMultiConnectUnpair(d.Address);
+                menu.Items.Add(unpair);
+            }
+
+            if (menu.Items.Count > 0)
+            {
+                border.ContextMenu = menu;
                 border.Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand);
 
-                // 左键点击：连接或切换
+                // 左键快捷操作：已连接 → 切换音频；已断开 → 连接
                 border.PointerPressed += (s, e) =>
                 {
                     var pt = e.GetCurrentPoint(border);
-                    if (pt.Properties.IsLeftButtonPressed)
+                    if (!pt.Properties.IsLeftButtonPressed) return;
+                    if (d.ConnectionState == 2)
                     {
-                        Log.D("UI", $"切换设备 -> {d.DeviceName} ({d.Address})");
-                        _pods.SendOperateHandheld(d.Address, true);
+                        if (canManage)
+                        {
+                            Log.D("UI", $"切换音频 -> {d.DeviceName} ({d.Address})");
+                            _pods.SendMultiConnectSetPriority(d.Address);
+                        }
+                        else
+                        {
+                            Log.D("UI", $"连接/切换设备 -> {d.DeviceName} ({d.Address})");
+                            _pods.SendOperateHandheld(d.Address, true);
+                        }
+                    }
+                    else
+                    {
+                        Log.D("UI", $"连接设备 -> {d.DeviceName} ({d.Address})");
+                        _pods.SendMultiConnectConnect(d.Address);
                     }
                 };
             }
@@ -1404,7 +1611,7 @@ public partial class MainWindow : SukiWindow
             DeviceList.Items.Add(border);
         }
 
-        // 更新状态栏文字
+        // 更新状态栏
         var current = all.FirstOrDefault(d => d.IsCurrentDevice);
         StatusText.Text = current != null
             ? $"已连接 — {current.DeviceName}"
@@ -1699,5 +1906,122 @@ public partial class MainWindow : SukiWindow
                 if (models.Contains(modelName))
                     return (brand, sn);
         return (null, null);
+    }
+
+    // ===== 版本更新检查 =====
+
+    private const string UPDATE_API = "https://oppopods.zhaoyi.fun/api/update/latest";
+    private const string DOWNLOAD_URL = "https://github.com/Zhaoyi-ya/OPPO-Pods-For-Windows/releases/latest";
+    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(5) };
+
+    private async void BtnCheckUpdate_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        BtnCheckUpdate.IsEnabled = false;
+        BtnCheckUpdate.Content = "检查中...";
+        try { await DoCheckUpdateAsync(silent: false); }
+        finally
+        {
+            BtnCheckUpdate.IsEnabled = true;
+            BtnCheckUpdate.Content = "检查更新";
+        }
+    }
+
+    private async Task CheckForUpdateAsync()
+    {
+        await Task.Delay(5000);
+        if (SettingsManager.GetString("AutoCheckUpdate") == "false") return;
+        await DoCheckUpdateAsync(silent: true);
+    }
+
+    private async Task DoCheckUpdateAsync(bool silent = false)
+    {
+        try
+        {
+            var resp = await _http.GetStringAsync(UPDATE_API);
+            var json = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(resp);
+            var serverVersion = json.GetProperty("version").GetString();
+
+            if (string.IsNullOrEmpty(serverVersion) || !IsNewerThan(serverVersion, VersionText.Text!))
+            {
+            if (!silent) await Dispatcher.UIThread.InvokeAsync(async () =>
+                await ShowCheckResultDialog($"已是最新版本 ({VersionText.Text})"));
+            return;
+            }
+
+            // 自动检查时才跳过已跳过的版本
+            if (silent)
+            {
+                var skipped = SettingsManager.GetString("SkippedVersion");
+                if (serverVersion == skipped) return;
+            }
+
+            var go = await Dispatcher.UIThread.InvokeAsync(async () =>
+                await ShowUpdateDialog(serverVersion));
+            if (go)
+                Process.Start(new ProcessStartInfo(DOWNLOAD_URL) { UseShellExecute = true });
+        }
+        catch
+        {
+            if (!silent) await Dispatcher.UIThread.InvokeAsync(async () =>
+                await ShowCheckResultDialog("检查更新失败，请检查网络连接"));
+        }
+    }
+
+    private async Task ShowCheckResultDialog(string msg)
+    {
+        _confirmTcs = new TaskCompletionSource<bool>();
+        _promptTcs = null;
+
+        DialogTitle.Text = "检查更新";
+        DialogMessage.Text = msg;
+        DialogInput.IsVisible = false;
+        DialogSkipBtn.IsVisible = false;
+        DialogCancelBtn.IsVisible = false;
+        DialogConfirmBtn.Content = "确定";
+        DialogConfirmBtn.Background = Brushes.Transparent;
+        DialogConfirmBtn.IsVisible = true;
+        DialogOverlay.IsVisible = true;
+
+        await _confirmTcs.Task;
+    }
+
+    /// <summary>比较版本号：server &gt; local 返回 true。支持 v1.0.6 &gt; v1.0.5。</summary>
+    private static bool IsNewerThan(string server, string local)
+    {
+        // 去掉 v/V 前缀
+        var sv = server.StartsWith('v') || server.StartsWith('V') ? server[1..] : server;
+        var lv = local.StartsWith('v') || local.StartsWith('V') ? local[1..] : local;
+
+        if (System.Version.TryParse(sv, out var sVer) && System.Version.TryParse(lv, out var lVer))
+            return sVer > lVer;
+
+        // 非标准格式（如 v1.0.6beta）回退到字符串比较，抛日志提醒
+        Log.D("UPDATE", $"非标准版本号格式: server={server} local={local}");
+        return string.Compare(sv, lv, StringComparison.Ordinal) > 0;
+    }
+
+    private async Task<bool> ShowUpdateDialog(string newVersion)
+    {
+        _confirmTcs = new TaskCompletionSource<bool>();
+        _promptTcs = null;
+
+        DialogTitle.Text = "发现新版本";
+        DialogMessage.Text = $"新版本 {newVersion} 已发布，当前版本 {VersionText.Text}，是否前往下载？";
+        DialogInput.IsVisible = false;
+        DialogCancelBtn.Content = "下次提醒我";
+        DialogCancelBtn.Background = Brushes.Transparent;
+        DialogCancelBtn.IsVisible = true;
+        DialogSkipBtn.Content = "跳过此版本";
+        DialogSkipBtn.Background = Brushes.Transparent;
+        DialogSkipBtn.IsVisible = true;
+        DialogConfirmBtn.Content = "前往下载";
+        DialogConfirmBtn.Background = Brushes.Transparent;
+        DialogConfirmBtn.IsVisible = true;
+        DialogOverlay.IsVisible = true;
+
+        // 记住版本号供跳过按钮使用
+        _updatePendingVersion = newVersion;
+
+        return await _confirmTcs.Task;
     }
 }

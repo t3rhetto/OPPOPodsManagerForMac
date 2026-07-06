@@ -51,6 +51,8 @@
        Click="NavHome_Click" Classes="SidebarNav"/>
      <Button x:Name="NavEq" Content="EQ调节" Height="38" FontSize="14"
        Click="NavEq_Click" Classes="SidebarNav"/>
+     <Button x:Name="NavDeviceInfo" Content="设备详情" Height="38" FontSize="14"
+       Click="NavDeviceInfo_Click" Classes="SidebarNav"/>
     </StackPanel>
     <Button Grid.Row="2" x:Name="NavSettings" Content="设置" Height="34" FontSize="13"
       Click="NavSettings_Click" Margin="16,0,12,14"
@@ -167,39 +169,58 @@
    <ScrollViewer x:Name="SettingsPanel" Padding="16,12,16,16"
        VerticalScrollBarVisibility="Hidden" IsVisible="False">
     <StackPanel Spacing="14">
-     <Border Padding="22,20" 
+     <Border Padding="22,20"
        CornerRadius="14" BoxShadow="0 1 4 0 #14000000" Classes="glassCard"
        >
       <StackPanel>
-       <TextBlock Text="设置" FontSize="15" FontWeight="Medium" Margin="0,0,0,14"
+       <TextBlock Text="设置" FontSize="15" FontWeight="Medium" Margin="0,0,0,16"
           HorizontalAlignment="Center" Foreground="{DynamicResource SukiText}"/>
-       <TextBlock Text="设备型号" FontSize="12" Margin="0,0,0,4" HorizontalAlignment="Center"
-          Foreground="{DynamicResource SukiText}" Opacity="0.7"/>
-       <ComboBox x:Name="CbBrand" Width="200" Height="30" Padding="8,0" Margin="0,0,0,6" HorizontalAlignment="Center"/>
-       <ComboBox x:Name="CbSeries" Width="200" Height="30" Padding="8,0" Margin="0,0,0,6" HorizontalAlignment="Center"/>
-       <ComboBox x:Name="CbModel" Width="200" Height="30" Padding="8,0" Margin="0,0,0,14" HorizontalAlignment="Center"/>
-       <TextBlock x:Name="ModelNote" Text="" FontSize="10" HorizontalAlignment="Center" Opacity="0.4" Margin="0,-10,0,10"/>
-       <TextBlock Text="自定义设备名称" FontSize="12" Margin="0,0,0,4" HorizontalAlignment="Center"
-          Foreground="{DynamicResource SukiText}" Opacity="0.7"/>
-       <TextBox x:Name="TbCustomName" Width="200" Height="30" Padding="8,4" Margin="0,0,0,14"
-          HorizontalContentAlignment="Center" HorizontalAlignment="Center"/>
-       <TextBlock Text="游戏模式实现" FontSize="12" Margin="0,0,0,4" HorizontalAlignment="Center"
-          Foreground="{DynamicResource SukiText}" Opacity="0.7"/>
-       <ComboBox x:Name="CbGameMode" Width="200" Height="30" Padding="8,0" Margin="0,0,0,14" HorizontalAlignment="Center">
-        <ComboBoxItem Content="标准 (28)"/><ComboBoxItem Content="兼容 (28+06)"/>
-       </ComboBox>
-       <TextBlock Text="主题" FontSize="12" Margin="0,0,0,4" HorizontalAlignment="Center"
-          Foreground="{DynamicResource SukiText}" Opacity="0.7"/>
-       <ComboBox x:Name="CbTheme" Width="200" Height="30" Padding="8,0" Margin="0,0,0,14" HorizontalAlignment="Center">
-        <ComboBoxItem Content="跟随系统"/><ComboBoxItem Content="深色"/><ComboBoxItem Content="浅色"/>
-       </ComboBox>
-       <Button Content="关于 OPPO Pods For Windows" FontSize="11" Opacity="0.5"
-         HorizontalAlignment="Center" Background="Transparent" BorderThickness="0"
-         Click="About_Click" Margin="0,6,0,6"/>
-       <CheckBox x:Name="CbTray" Content="关闭到托盘" Margin="0,0,0,10" HorizontalAlignment="Center"/>
-       <CheckBox x:Name="CbAuto" Content="开机自启" Margin="0,0,0,14" HorizontalAlignment="Center"/>
-       <Button Content="测试电量弹窗" Height="28" FontSize="11" Margin="0,4,0,0"
-         HorizontalAlignment="Center" Opacity="0.5" Click="TestToast_Click"/>
+
+       <Grid ColumnDefinitions="*,*">
+        <!-- ====== 左列 ====== -->
+        <StackPanel Grid.Column="0" Margin="0,0,10,0" Spacing="6">
+         <TextBlock Text="自定义设备名称" FontSize="12"
+            Foreground="{DynamicResource SukiText}" Opacity="0.7"/>
+         <TextBox x:Name="TbCustomName" Height="28" Padding="8,4" Margin="0,0,0,10"
+            HorizontalContentAlignment="Center" HorizontalAlignment="Stretch"/>
+
+         <TextBlock Text="设备型号" FontSize="12"
+            Foreground="{DynamicResource SukiText}" Opacity="0.7"/>
+         <ComboBox x:Name="CbBrand" Height="28" Padding="8,0" HorizontalAlignment="Stretch"/>
+         <ComboBox x:Name="CbSeries" Height="28" Padding="8,0" HorizontalAlignment="Stretch"/>
+         <ComboBox x:Name="CbModel" Height="28" Padding="8,0" HorizontalAlignment="Stretch"/>
+         <TextBlock x:Name="ModelNote" Text="" FontSize="10" Opacity="0.4"
+            Margin="0,-2,0,8"/>
+
+         <TextBlock Text="游戏模式实现" FontSize="12"
+            Foreground="{DynamicResource SukiText}" Opacity="0.7"/>
+         <ComboBox x:Name="CbGameMode" Height="28" Padding="8,0" HorizontalAlignment="Stretch">
+          <ComboBoxItem Content="标准 (28)"/><ComboBoxItem Content="兼容 (28+06)"/>
+         </ComboBox>
+        </StackPanel>
+
+        <!-- ====== 右列 ====== -->
+        <StackPanel Grid.Column="1" Margin="10,0,0,0" Spacing="6">
+         <TextBlock Text="主题" FontSize="12"
+            Foreground="{DynamicResource SukiText}" Opacity="0.7"/>
+         <ComboBox x:Name="CbTheme" Height="28" Padding="8,0" Margin="0,0,0,10" HorizontalAlignment="Stretch">
+          <ComboBoxItem Content="跟随系统"/><ComboBoxItem Content="深色"/><ComboBoxItem Content="浅色"/>
+         </ComboBox>
+
+         <CheckBox x:Name="CbAutoUpdate" Content="自动检查更新" Margin="0,0,0,2"/>
+         <Button x:Name="BtnCheckUpdate" Content="检查更新" Height="30" FontSize="11"
+             Click="BtnCheckUpdate_Click" HorizontalAlignment="Stretch" Margin="0,0,0,4"/>
+
+         <CheckBox x:Name="CbTray" Content="关闭到托盘"/>
+         <CheckBox x:Name="CbAuto" Content="开机自启"/>
+
+         <Button Content="关于 OPPO Pods For Windows" FontSize="11" Opacity="0.5"
+           Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch"
+           Click="About_Click" Margin="0,8,0,0"/>
+         <Button Content="测试电量弹窗" FontSize="11" Opacity="0.5"
+           HorizontalAlignment="Stretch" Click="TestToast_Click"/>
+        </StackPanel>
+       </Grid>
       </StackPanel>
      </Border>
     </StackPanel>
@@ -212,11 +233,17 @@
        CornerRadius="14" BoxShadow="0 1 4 0 #14000000" Classes="glassCard"
        >
       <StackPanel>
-       <TextBlock Text="关于" FontSize="15" FontWeight="Medium" Margin="0,0,0,14"
-          HorizontalAlignment="Center" Foreground="{DynamicResource SukiText}"/>
+       <Grid Margin="0,0,0,14">
+        <Button Content="⟵" FontSize="14" Opacity="0.5"
+          HorizontalAlignment="Left" Background="Transparent" BorderThickness="0"
+          Click="AboutBack_Click" Padding="4,0"/>
+        <TextBlock Text="关于" FontSize="15" FontWeight="Medium"
+           HorizontalAlignment="Center" VerticalAlignment="Center"
+           Foreground="{DynamicResource SukiText}"/>
+       </Grid>
        <TextBlock Text="OPPO Pods For Windows" FontSize="13" HorizontalAlignment="Center" Margin="0,0,0,4"
           Foreground="{DynamicResource SukiText}"/>
-       <TextBlock x:Name="VersionText" Text="v1.0.5" FontSize="11" HorizontalAlignment="Center" Opacity="0.4" Margin="0,0,0,14"/>
+       <TextBlock x:Name="VersionText" Text="v1.1.0" FontSize="11" HorizontalAlignment="Center" Opacity="0.4" Margin="0,0,0,14"/>
        <TextBlock Text="致谢" FontSize="12" FontWeight="Medium" HorizontalAlignment="Center" Margin="0,0,0,6"
           Foreground="{DynamicResource SukiText}"/>
        <Button FontSize="10" HorizontalAlignment="Center" Opacity="0.5" Margin="0,0,0,2"
@@ -371,6 +398,52 @@
         Opacity="0.3" Foreground="{DynamicResource SukiText}"/>
     </StackPanel>
    </ScrollViewer>
+
+   <ScrollViewer x:Name="DeviceInfoPanel" Padding="16,12,16,16"
+       VerticalScrollBarVisibility="Hidden" IsVisible="False">
+    <StackPanel Spacing="14">
+     <TextBlock Text="设备详情" FontSize="15" FontWeight="Medium"
+        HorizontalAlignment="Center" Foreground="{DynamicResource SukiText}"/>
+     <!-- 基本信息 -->
+     <Border Padding="18,16"
+       CornerRadius="14" BoxShadow="0 1 4 0 #14000000" Classes="glassCard">
+      <StackPanel Spacing="10">
+       <TextBlock Text="基本信息" FontSize="13" FontWeight="Medium"
+          Foreground="{DynamicResource SukiText}" Opacity="0.8"/>
+       <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" Margin="0,2">
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="设备名称" FontSize="12"
+           Opacity="0.5" Foreground="{DynamicResource SukiText}" Margin="0,0,20,6"/>
+        <TextBlock Grid.Row="0" Grid.Column="1" x:Name="DiDeviceName" Text="-" FontSize="12"
+           Foreground="{DynamicResource SukiText}" Margin="0,0,0,6"/>
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="固件版本" FontSize="12"
+           Opacity="0.5" Foreground="{DynamicResource SukiText}" Margin="0,0,20,6"/>
+        <TextBlock Grid.Row="1" Grid.Column="1" x:Name="DiFirmware" Text="-" FontSize="12"
+           Foreground="{DynamicResource SukiText}" Margin="0,0,0,6"/>
+        <TextBlock Grid.Row="2" Grid.Column="0" Text="编解码器" FontSize="12"
+           Opacity="0.5" Foreground="{DynamicResource SukiText}"/>
+        <TextBlock Grid.Row="2" Grid.Column="1" x:Name="DiCodec" Text="-" FontSize="12"
+           Foreground="{DynamicResource SukiText}"/>
+       </Grid>
+      </StackPanel>
+     </Border>
+     <!-- 音效增强互斥组 -->
+     <Border Padding="18,16"
+       CornerRadius="14" BoxShadow="0 1 4 0 #14000000" Classes="glassCard">
+      <StackPanel Spacing="10">
+       <TextBlock Text="音效增强" FontSize="13" FontWeight="Medium"
+          Foreground="{DynamicResource SukiText}" Opacity="0.8"/>
+       <TextBlock x:Name="DiEnhanceHint" Text="" FontSize="10"
+          Opacity="0.3" Foreground="{DynamicResource SukiText}"/>
+       <StackPanel x:Name="DiEnhanceGroup" Spacing="6">
+        <RadioButton x:Name="DiEnhanceNone" Content="关闭" GroupName="Enhancement"/>
+        <RadioButton x:Name="DiEnhanceSpatial" Content="空间音效" GroupName="Enhancement"/>
+        <RadioButton x:Name="DiEnhanceGame" Content="游戏音效" GroupName="Enhancement"/>
+        <RadioButton x:Name="DiEnhanceEq" Content="大师调音 (EQ)" GroupName="Enhancement"/>
+       </StackPanel>
+      </StackPanel>
+     </Border>
+    </StackPanel>
+   </ScrollViewer>
   </Grid>
 
   <!-- ========== 浮层对话框 ========== -->
@@ -396,6 +469,9 @@
       <Button x:Name="DialogCancelBtn" Content="取消"
           Height="28" FontSize="12" Padding="14,0"
           Click="DialogCancel_Click"/>
+      <Button x:Name="DialogSkipBtn" Content="跳过此版本"
+          Height="28" FontSize="12" Padding="14,0"
+          IsVisible="False" Click="DialogSkip_Click"/>
       <Button x:Name="DialogConfirmBtn" Content="保存"
           Height="28" FontSize="12" Padding="14,0" IsDefault="True"
           Click="DialogConfirm_Click"/>
