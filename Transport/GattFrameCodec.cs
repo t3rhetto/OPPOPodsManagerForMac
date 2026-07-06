@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace OppoPodsManager;
 
 /// <summary>
-/// 官方 melody BLE GATT 帧格式（无 SPP 的 0xAA 外壳）：
+/// melody BLE GATT 帧格式（无 SPP 的 0xAA 外壳）：
 ///   cmd(2, 小端) | transId(1) | payLen(2, 小端) | payload
 /// 对齐 APK 反编译的 Packet(Ls7/a) 结构：头部 5 字节，LENGTH 为 2 字节小端。
 /// 响应帧 cmd 第 15 位(0x8000)置位；本编解码器原样保留 cmd（含响应位），
@@ -15,7 +15,7 @@ public sealed class GattFrameCodec : IFrameCodec
 {
     private const int HeaderLen = 5;       // cmd(2)+transId(1)+payLen(2)
     private const int MaxFrame = 4096;     // 单帧上限（BLE 载荷远小于此，纯防御）
-    private byte _txnCounter;              // 每次发送递增，0-255 循环（对齐官方 PacketFactory 每 MAC 计数器）
+    private byte _txnCounter;              // 每次发送递增，0-255 循环（PacketFactory 每 MAC 计数器）
 
     public byte[] Encode(ushort cmd, byte[] payload)
     {
@@ -28,7 +28,7 @@ public sealed class GattFrameCodec : IFrameCodec
         pkt[4] = (byte)((payload.Length / 256) & 0xFF);
         Buffer.BlockCopy(payload, 0, pkt, HeaderLen, payload.Length);
 
-        // 递增事务号（发送后自增，与官方"用旧值构建当前包"等价：此处发完即备下次用）
+        // 递增事务号（发送后自增，下一帧使用新 seq）
         _txnCounter = (byte)((_txnCounter + 1) & 0xFF);
         return pkt;
     }

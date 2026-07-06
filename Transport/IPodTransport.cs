@@ -1,37 +1,6 @@
 using System;
-using System.Collections.Generic;
 
 namespace OppoPodsManager;
-
-/// <summary>一条已解码的协议帧：命令字 + 载荷 + 事务号（不含任何链路层封装）。</summary>
-public readonly struct PodFrame
-{
-    public readonly ushort Cmd;
-    public readonly byte[] Payload;
-    public readonly byte Seq;   // TRANS_ID：请求/响应配对用（官方 Packet.b）
-    public PodFrame(ushort cmd, byte[] payload, byte seq = 0)
-    {
-        Cmd = cmd;
-        Payload = payload;
-        Seq = seq;
-    }
-}
-
-/// <summary>
-/// 帧编解码器：负责命令层 (cmd+payload) 与具体链路帧格式之间的转换。
-/// SPP 用 0xAA 头，GATT 用 5 字节头，各自实现本接口。
-/// </summary>
-public interface IFrameCodec
-{
-    /// <summary>把 cmd+payload 封装为可直接写入链路的字节。</summary>
-    byte[] Encode(ushort cmd, byte[] payload);
-
-    /// <summary>
-    /// 从累积缓冲里尝试提取一整帧。成功则消费掉对应字节并返回 true。
-    /// 数据不足返回 false（等待更多字节）。
-    /// </summary>
-    bool TryDecode(List<byte> buffer, out PodFrame frame);
-}
 
 /// <summary>
 /// 传输层抽象：屏蔽物理链路(经典 SPP / BLE GATT)差异，只暴露"发命令 / 收帧"。

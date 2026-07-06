@@ -9,7 +9,7 @@ namespace OppoPodsManager;
 [JsonSerializable(typeof(Dictionary<string, string>))]
 internal partial class AppSettingsContext : JsonSerializerContext { }
 
-/// <summary>Cross-platform settings storage using JSON file</summary>
+/// <summary>JSON 文件持久化设置存储</summary>
 public static class SettingsManager
 {
     private static readonly string FilePath = Path.Combine(

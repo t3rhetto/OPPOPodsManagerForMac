@@ -2,6 +2,7 @@
 bin/
 obj/
 publish/
+Network/
 
 ## IDE / VS
 .vs/

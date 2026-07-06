@@ -13,26 +13,26 @@ using Windows.Storage.Streams;
 namespace OppoPodsManager;
 
 /// <summary>
-/// 官方形式的经典蓝牙 RFCOMM 传输（WinRT StreamSocket）。
+/// 经典蓝牙 RFCOMM 传输（WinRT StreamSocket）。
 /// 发现走 RfcommServiceFinder（按服务 UUID / 配对名枚举），连接用
-/// StreamSocket.ConnectAsync(service.ConnectionHostName, service.ConnectionServiceName)，
-/// 无需像 Winsock 方案那样猜 UUID/port。帧格式与 Winsock SPP 一致（SppFrameCodec，0xAA 外壳）。
+/// StreamSocket.ConnectAsync(service.ConnectionHostName, service.ConnectionServiceName)。
+/// 帧格式与 Winsock SPP 一致（SppFrameCodec，0xAA 外壳）。
 /// 作为首选 SPP 连接方式；失败时由 FallbackTransport 回退到 Winsock SppTransport。
 /// </summary>
 [SupportedOSPlatform("windows10.0.19041.0")]
 public sealed class WindowsRfcommStreamTransport : IPodTransport
 {
-    private const int ConnectTimeoutMs = 6000;
+    private const int ConnectTimeoutMs = 6000;   // StreamSocket.ConnectAsync 超时上限
 
     private readonly IFrameCodec _codec = new SppFrameCodec();
-    private readonly List<byte> _framer = new();
-    private readonly ConcurrentQueue<PodFrame> _rxQueue = new();
-    private readonly object _sendLock = new();
+    private readonly List<byte> _framer = new();         // 帧累积缓冲
+    private readonly ConcurrentQueue<PodFrame> _rxQueue = new();  // 已解码队列（Poll 交付）
+    private readonly object _sendLock = new();             // 写保护
 
-    private RfcommDeviceService? _service;
-    private StreamSocket? _socket;
-    private DataWriter? _writer;
-    private DataReader? _reader;
+    private RfcommDeviceService? _service;   // RFCOMM 服务（发现结果）
+    private StreamSocket? _socket;           // WinRT TCP 式 socket
+    private DataWriter? _writer;             // OutputStream 写器
+    private DataReader? _reader;             // InputStream 读器
     private CancellationTokenSource? _readCts;
     private Task? _readLoop;
     private bool _disposed;
@@ -44,6 +44,7 @@ public sealed class WindowsRfcommStreamTransport : IPodTransport
     public event Action<PodFrame>? FrameReceived;
     public event Action? Disconnected;
 
+    /// <summary>发现 RFCOMM 服务 → 建立 StreamSocket 连接 → 写入器/读取器就绪 → 启动后台读循环。</summary>
     public bool Connect()
     {
         try
@@ -72,6 +73,7 @@ public sealed class WindowsRfcommStreamTransport : IPodTransport
         }
     }
 
+    /// <summary>异步连接核心：发现服务 → 打开 StreamSocket → 初始化 Writer/Reader。</summary>
     private async Task<bool> ConnectAsyncCore()
     {
         _service = await RfcommServiceFinder.FindServiceAsync();
@@ -82,7 +84,7 @@ public sealed class WindowsRfcommStreamTransport : IPodTransport
         Log.D("RFSOCK", $"Connect: 命中服务 name=\"{DeviceName}\" host={_service.ConnectionHostName} svc={_service.ConnectionServiceName}");
 
         _socket = new StreamSocket();
-        // 官方形式：用服务自带的 ConnectionHostName / ConnectionServiceName 连接
+        // 用服务自带的 ConnectionHostName / ConnectionServiceName 连接
         await _socket.ConnectAsync(_service.ConnectionHostName, _service.ConnectionServiceName);
 
         _writer = new DataWriter(_socket.OutputStream);
@@ -94,6 +96,7 @@ public sealed class WindowsRfcommStreamTransport : IPodTransport
         return true;
     }
 
+    /// <summary>启动后台读循环（Task.Run 在新线程运行 ReadLoopAsync）。</summary>
     private void StartReadLoop()
     {
         _readCts = new CancellationTokenSource();
@@ -126,7 +129,7 @@ public sealed class WindowsRfcommStreamTransport : IPodTransport
                 }
             }
         }
-        catch (OperationCanceledException) { /* 正常取消 */ }
+        catch (OperationCanceledException) { /* 正常取消（CTS 触发）*/ }
         catch (Exception ex)
         {
             if (!ct.IsCancellationRequested) Log.Ex("RFSOCK", "ReadLoop", ex);
@@ -137,6 +140,7 @@ public sealed class WindowsRfcommStreamTransport : IPodTransport
         }
     }
 
+    /// <summary>编码并发送一帧（DataWriter → OutputStream，写锁保护）。</summary>
     public void Send(ushort cmd, byte[] payload)
     {
         var writer = _writer;
@@ -155,9 +159,9 @@ public sealed class WindowsRfcommStreamTransport : IPodTransport
         catch (Exception ex) { Log.Ex("RFSOCK", $"Send cmd=0x{cmd:X4}", ex); }
     }
 
+    /// <summary>在 timeoutMs 预算内取出已入队的帧交付上层（后台读循环异步入队，这里同步取出）。</summary>
     public void Poll(int timeoutMs)
     {
-        // 读在后台循环里做，这里在时间预算内取出已入队的帧交付上层
         var end = DateTime.UtcNow.AddMilliseconds(timeoutMs);
         while (true)
         {
@@ -170,6 +174,7 @@ public sealed class WindowsRfcommStreamTransport : IPodTransport
             if (DateTime.UtcNow >= end) break;
             Thread.Sleep(20);
         }
+        // 收尾：交付循环末尾可能刚入队的帧
         while (_rxQueue.TryDequeue(out var frame))
         {
             Log.D("RFSOCK", $"Poll: 交付帧 cmd=0x{frame.Cmd:X4} payload={frame.Payload.Length}B");
@@ -177,6 +182,7 @@ public sealed class WindowsRfcommStreamTransport : IPodTransport
         }
     }
 
+    /// <summary>关闭连接标记并触发断开事件（幂等，链路断开时由读循环调用）。</summary>
     private void OnDisconnected()
     {
         if (!IsConnected) return;
@@ -184,25 +190,20 @@ public sealed class WindowsRfcommStreamTransport : IPodTransport
         Disconnected?.Invoke();
     }
 
+    /// <summary>标记断开并释放所有 WinRT 资源。</summary>
     public void Close()
     {
         IsConnected = false;
         Cleanup();
     }
 
+    /// <summary>逐一释放 Writer/Reader/Socket/Service 并置 null。</summary>
     private void Cleanup()
     {
-        try { _readCts?.Cancel(); } catch { }
-        try
-        {
-            if (_writer != null) { _writer.DetachStream(); _writer.Dispose(); }
-        }
-        catch { }
-        try
-        {
-            if (_reader != null) { _reader.DetachStream(); _reader.Dispose(); }
-        }
-        catch { }
+        try { _readCts?.Cancel(); } catch { /* CTS 已释放则忽略 */ }
+        // 先 DetachStream 再 Dispose，避免 WinRT 对象释放顺序异常
+        try { if (_writer != null) { _writer.DetachStream(); _writer.Dispose(); } } catch { }
+        try { if (_reader != null) { _reader.DetachStream(); _reader.Dispose(); } } catch { }
         try { _socket?.Dispose(); } catch { }
         try { _service?.Dispose(); } catch { }
         _writer = null;
@@ -213,6 +214,7 @@ public sealed class WindowsRfcommStreamTransport : IPodTransport
         _readLoop = null;
     }
 
+    /// <summary>在给定超时内同步等待异步 Task&lt;bool>，超时返回 false。</summary>
     private static bool RunSync(Func<Task<bool>> op, int timeoutMs)
     {
         try
@@ -223,6 +225,7 @@ public sealed class WindowsRfcommStreamTransport : IPodTransport
         catch (Exception ex) { Log.Ex("RFSOCK", "RunSync", ex); return false; }
     }
 
+    /// <summary>释放全部 WinRT 资源（幂等）。</summary>
     public void Dispose()
     {
         if (_disposed) return;

@@ -23,7 +23,8 @@ public sealed class SppTransport : IPodTransport
     private readonly IFrameCodec _codec = new SppFrameCodec();
     private readonly IDeviceLocator _locator;
 
-    /// <summary>默认用官方形式的 WinRT 发现（WindowsRfcommLocator，内部回退注册表）；可注入其它 IDeviceLocator。</summary>
+    /// <summary>默认用 WinRT 发现（WindowsRfcommLocator，内部回退注册表）；可注入其它 IDeviceLocator。</summary>
+    /// <summary>默认使用 WinRT RFCOMM 发现器（RfcommServiceFinder）；可注入其它 IDeviceLocator。</summary>
     public SppTransport() : this(new WindowsRfcommLocator()) { }
     public SppTransport(IDeviceLocator locator) { _locator = locator; }
     private bool _disposed;
@@ -35,7 +36,7 @@ public sealed class SppTransport : IPodTransport
     public event Action<PodFrame>? FrameReceived;
     public event Action? Disconnected;
 
-    // WinSock2 imports
+    // WinSock2 P/Invoke 声明
     [DllImport("ws2_32.dll", SetLastError = true)]
     private static extern int WSAStartup(ushort version, IntPtr data);
 
@@ -132,6 +133,64 @@ public sealed class SppTransport : IPodTransport
         finally { Marshal.FreeHGlobal(wsaPtr); }
     }
 
+    /// <summary>发现设备 → 创建 BTH socket → 带超时非阻塞 connect → 恢复阻塞模式读取。</summary>
+    public bool Connect()
+    {
+        try
+        {
+            Log.D("BT", "Connect: 开始");
+            EnsureWsaStarted();
+            CloseSocket();
+
+            var (addr, name) = _locator.Locate();
+            if (addr == 0)
+            {
+                LastError = "未找到已配对的 OPPO 设备";
+                Log.Result("BT", "Connect", false, LastError);
+                return false;
+            }
+            DeviceName = name ?? ("耳机 " + addr.ToString("X12"));
+            Log.D("BT", $"Connect: 目标 addr={addr:X12} name=\"{DeviceName}\"");
+
+            _socket = socket(AF_BTH, SOCK_STREAM, BTHPROTO_RFCOMM);
+            if (_socket == IntPtr.Zero)
+            {
+                LastError = "无法创建 BTH socket";
+                Log.Result("BT", "Connect socket()", false, "WSAErr=" + WSAGetLastError());
+                return false;
+            }
+
+            // 按优先级尝试多种连接方式（UUID+port 组合），部分设备需要特定参数
+            bool ok = TryConnect(addr, OppoProtocol.OppoSppUuid, 0)
+                   || TryConnect(addr, OppoProtocol.OppoSppUuid, 15)
+                   || TryConnect(addr, Guid.Empty, 15)
+                   || TryConnect(addr, Guid.Empty, 1);
+            if (!ok)
+            {
+                CloseSocket();
+                LastError = "无法连接耳机（已尝试 4 种连接方式）";
+                Log.Result("BT", "Connect", false, LastError);
+                return false;
+            }
+
+            // 接收超时，保证 Poll 的时间预算生效（否则 recv 无限阻塞）
+            int rcvTimeout = RecvTimeoutMs;
+            setsockopt(_socket, SOL_SOCKET, SO_RCVTIMEO, ref rcvTimeout, sizeof(int));
+
+            _framer.Clear();
+            IsConnected = true;
+            LastError = null;
+            Log.Result("BT", "Connect", true, $"name=\"{DeviceName}\"");
+            return true;
+        }
+        catch (Exception e)
+        {
+            LastError = e.Message;
+            Log.Ex("BT", "Connect", e);
+            return false;
+        }
+    }
+
     /// <summary>关闭当前 socket 并清零句柄（幂等）</summary>
     private void CloseSocket()
     {
@@ -214,63 +273,7 @@ public sealed class SppTransport : IPodTransport
         ioctlsocket(_socket, FIONBIO, ref blocking);
         return true;
     }
-    public bool Connect()
-    {
-        try
-        {
-            Log.D("BT", "Connect: 开始");
-            EnsureWsaStarted();
-            CloseSocket();  // 关掉上次遗留句柄，避免重连泄漏
-
-            var (addr, name) = _locator.Locate();
-            if (addr == 0)
-            {
-                LastError = "未找到已配对的 OPPO 设备";
-                Log.Result("BT", "Connect", false, LastError);
-                return false;
-            }
-            DeviceName = name ?? ("耳机 " + addr.ToString("X12"));
-            Log.D("BT", $"Connect: 目标 addr={addr:X12} name=\"{DeviceName}\"");
-
-            _socket = socket(AF_BTH, SOCK_STREAM, BTHPROTO_RFCOMM);
-            if (_socket == IntPtr.Zero)
-            {
-                LastError = "无法创建 BTH socket";
-                Log.Result("BT", "Connect socket()", false, "WSAErr=" + WSAGetLastError());
-                return false;
-            }
-
-            // 按优先级尝试多种连接方式
-            bool ok = TryConnect(addr, OppoProtocol.OppoSppUuid, 0)
-                   || TryConnect(addr, OppoProtocol.OppoSppUuid, 15)
-                   || TryConnect(addr, Guid.Empty, 15)
-                   || TryConnect(addr, Guid.Empty, 1);
-            if (!ok)
-            {
-                CloseSocket();
-                LastError = "无法连接耳机（已尝试 4 种连接方式）";
-                Log.Result("BT", "Connect", false, LastError);
-                return false;
-            }
-
-            // 接收超时，保证 Poll 的时间预算生效（否则 recv 无限阻塞）
-            int rcvTimeout = RecvTimeoutMs;
-            setsockopt(_socket, SOL_SOCKET, SO_RCVTIMEO, ref rcvTimeout, sizeof(int));
-
-            _framer.Clear();
-            IsConnected = true;
-            LastError = null;
-            Log.Result("BT", "Connect", true, $"name=\"{DeviceName}\"");
-            return true;
-        }
-        catch (Exception e)
-        {
-            LastError = e.Message;
-            Log.Ex("BT", "Connect", e);
-            return false;
-        }
-    }
-
+    /// <summary>编码并发送一帧（Winsock send，socket 锁保护）。</summary>
     public void Send(ushort cmd, byte[] payload)
     {
         var bytes = _codec.Encode(cmd, payload);
@@ -289,6 +292,7 @@ public sealed class SppTransport : IPodTransport
         }
     }
 
+    /// <summary>在 timeoutMs 预算内循环 recv 字节，解帧后交付绑定事件。</summary>
     public void Poll(int timeoutMs)
     {
         if (_socket == IntPtr.Zero) return;
@@ -329,12 +333,14 @@ public sealed class SppTransport : IPodTransport
         Disconnected?.Invoke();
     }
 
+    /// <summary>断开连接并关闭 socket（幂等）。</summary>
     public void Close()
     {
         IsConnected = false;
         CloseSocket();
     }
 
+    /// <summary>释放传输资源（幂等）。</summary>
     public void Dispose()
     {
         if (_disposed) return;

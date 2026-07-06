@@ -13,7 +13,7 @@ public partial class ToastWindow : Window
         // 初始态(Opacity=0 + Card 右移 28px)与淡入/滑入过渡均声明在 XAML，从第 0 帧生效
     }
 
-    /// <summary>Show at desktop bottom-right with semi-transparency, auto-close after ms</summary>
+    /// <summary>桌面右下角半透明 Toast 显示，指定毫秒后自动关闭</summary>
     public static async Task ShowAsync(PodState state, string deviceName, int durationMs = 5000)
     {
         var toast = new ToastWindow();

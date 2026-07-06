@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -11,7 +10,7 @@ namespace OppoPodsManager;
 /// 不关心底层是经典 SPP 还是 BLE GATT——只依赖 IPodTransport。
 /// 传输选择由 TransportFactory 决定
 /// </summary>
-public class PodManager : IPodManager
+public partial class PodManager : IPodManager
 {
     private readonly IPodTransport _transport;
     private bool _disposed;
@@ -19,12 +18,12 @@ public class PodManager : IPodManager
     public PodState State { get; } = new();
     public DeviceCapabilities Caps { get; private set; } = DeviceCapabilities.Detect(null);
 
-    // 每设备能力集（对齐官方 ProtocolManager：命令发送前先做能力判定，不支持则拦截）。
-    // 官方靠 0x11C 位图；本机 SPP 无该响应，改由型号 JSON(Caps) 推导，语义等价。
+    // 每设备能力集（命令发送前先做能力判定，不支持则拦截）。
+    // melody 靠 0x11C 位图；本机 SPP 无该响应，改由型号 JSON(Caps) 推导。
     private readonly HashSet<ushort> _deviceCaps = new();
 
-    // 全局通用能力（官方 Le7.a.b：所有设备默认支持，无需位图校验）。
-    // 含 0x105/0x106/0x107/0x108/0x109（官方 Layer1 allowlist）。
+    // 全局通用能力（所有设备默认支持，无需位图校验）。
+    // 含 0x105/0x106/0x107/0x108/0x109（melody Layer1 allowlist）。
     private static readonly HashSet<ushort> GlobalCaps = new()
     {
         OppoProtocol.CmdQueryProductId, OppoProtocol.CmdProductIdResp,
@@ -59,14 +58,14 @@ public class PodManager : IPodManager
     }
 
     /// <summary>
-    /// 功能开关发送（空间音效/游戏/双设备）。官方 HeadsetCoreService.a1：
+    /// 功能开关发送（空间音效/游戏/双设备）。
     /// 统一用命令 0x403 + [feature][enable]，兼容 BR/EDR 与 LE Audio 传输（同一命令）。
     /// 该命令属通用功能开关，各功能靠 feature 字节区分，不存在新旧命令切换。
     /// </summary>
     private void SendFeatureSwitch(byte feature, bool on, string label)
         => SendSet(OppoProtocol.CmdSetFeature, OppoProtocol.FeaturePayload(feature, on), label);
 
-    // 命令分发器（官方式超时/重试/请求-响应配对，对齐 PacketTimeoutProcessor）
+    // 命令分发器（超时/重试/请求-响应配对）
     private readonly PacketDispatcher _dispatcher;
 
     public PodManager() : this(TransportFactory.Create()) { }
@@ -82,7 +81,7 @@ public class PodManager : IPodManager
     }
 
     /// <summary>
-    /// 按当前 Caps（型号 JSON）重建每设备能力集。对齐官方：识别到 productId 后能力随之更新。
+    /// 按当前 Caps（型号 JSON）重建每设备能力集。识别到 productId 后能力随之更新。
     /// </summary>
     private void RebuildCapabilitySet()
     {
@@ -102,7 +101,7 @@ public class PodManager : IPodManager
             _deviceCaps.Add(OppoProtocol.CmdEqResp);
             _deviceCaps.Add(OppoProtocol.CmdEqNotify);
         }
-        // 空间音频三模式：设置命令 0x0422 + 状态回读查询 0x012A（官方 getHeadsetSpatialType）
+        // 空间音频三模式：设置命令 0x0422 + 状态回读查询 0x012A（getHeadsetSpatialType）
         if (Caps.HasSpatialAudio)
         {
             _deviceCaps.Add(OppoProtocol.CmdSpatialAudio);
@@ -116,8 +115,14 @@ public class PodManager : IPodManager
             _deviceCaps.Add(OppoProtocol.CmdMultiConnectResp);
             _deviceCaps.Add(OppoProtocol.CmdOperateHandheld);
         }
-        // 功能开关（空间音效/游戏/双设备）：官方 HeadsetCoreService.a1 用通用命令 0x403
-        // ([feature][enable])，兼 BR/EDR 与 LE Audio（0x1f 只切日志标签，命令不变）。
+        // 多连接优先级/自动切换（MultiDevicesConnect>=2 才支持优先设备管理 + 0x0132 查询）
+        if (Caps.HasMultiConnectManage)
+        {
+            _deviceCaps.Add(OppoProtocol.CmdQueryMultiPriority);
+            _deviceCaps.Add(OppoProtocol.CmdMultiPriorityResp);
+        }
+        // 功能开关（空间音效/游戏/双设备）：用通用命令 0x403
+        // ([feature][enable])，兼 BR/EDR 与 LE Audio。
         // 0x423 是"游戏音效类型"等专用功能的独立命令，不是 0x403 的替代路径。
         if (Caps.HasSpatialSound || Caps.HasGameMode || Caps.HasDualDevice)
             _deviceCaps.Add(OppoProtocol.CmdSetFeature);        // 0x403 通用功能开关
@@ -132,13 +137,13 @@ public class PodManager : IPodManager
             _deviceCaps.Add(OppoProtocol.CmdQueryCodecType);
     }
 
-    /// <summary>命令能力判定（官方 ProtocolManager.c）：全局通用集 或 每设备集 命中才可发。</summary>
+    /// <summary>命令能力判定：全局通用集 或 每设备集 命中才可发。</summary>
     private bool Supports(ushort cmd) => GlobalCaps.Contains(cmd) || _deviceCaps.Contains(cmd);
 
     /// <summary>该型号是否有"智能切换"档位（有则需额外查询实时档位 [0x03,0x01]）。</summary>
     private bool HasSmartMode() => Caps.AncNameToIndex.ContainsKey("Smart");
 
-    /// <summary>能力门控的发送：不支持则拦截并记日志（对齐官方"UNSUPPORTED cmd=0x..."）。</summary>
+    /// <summary>能力门控的发送：不支持则拦截并记日志（"UNSUPPORTED cmd=0x..." 模式）。</summary>
     private bool TrySend(ushort cmd, byte[] payload)
     {
         if (!Supports(cmd))
@@ -171,6 +176,7 @@ public class PodManager : IPodManager
             case OppoProtocol.CmdBatchQueryResp: ParseBatchStatus(p, 0, len); break;
             case OppoProtocol.CmdMultiConnectResp: ParseMultiConnect(p, 0, len); break;
             case OppoProtocol.CmdProductIdResp: ParseProductId(p, 0, len); break;
+            case OppoProtocol.CmdMultiPriorityResp: ParseMultiPriority(p, 0, len); break;
 
             // ===== 新增：固件版本 / 编解码器 响应 =====
             case (ushort)(OppoProtocol.CmdQueryVersion | 0x8000):  // 0x8105
@@ -201,7 +207,6 @@ public class PodManager : IPodManager
             case (ushort)(OppoProtocol.CmdQueryGameSound | 0x8000):  // 0x812B 游戏音效信息
             {
                 // 响应 [status(1)][selectType(1)][count(1)][supportTypes...]。
-                // 官方一致语义（HearingOptimizeItem.isSelectGameSound / GameSetFragment）：
                 // selectType != 0 → 游戏音效已开启（selectType 即当前生效音效 type，如 3）；
                 // selectType == 0 → 关闭（gameSoundList 里的 {type:0} 即"关闭"项）。
                 if (len >= 2 && p[0] == 0x00)
@@ -214,9 +219,9 @@ public class PodManager : IPodManager
                 break;
             }
 
-            // ===== 通知注册响应族（官方 NotificationCommandManager.c）=====
+            // ===== 通知注册响应族（NotificationCommandManager）=====
             case OppoProtocol.CmdRegisterMultiResp:
-                // 批量注册完成 = 初始化握手结束 ACK（官方置 setInitCmdCompleted(true)）
+                // 批量注册完成 = 初始化握手结束 ACK（置 setInitCmdCompleted）
                 Log.D("RFCOMM", "DispatchFrame: 注册通知完成 (0x8205 握手 ACK)");
                 break;
             case OppoProtocol.CmdNotifyCapabilityResp:
@@ -227,12 +232,12 @@ public class PodManager : IPodManager
                 Log.D("RFCOMM", $"DispatchFrame: 注册/取消通知响应 cmd=0x{frame.Cmd:X4} status={(len > 0 ? p[0] : -1)}");
                 break;
             case OppoProtocol.CmdRegisterNotifyEvent:
-                // 注册后携带的事件：官方从 offset+1 递归分发，这里跳过 status 字节按通知事件解析
+                // 注册后携带的事件：跳过 status 字节按通知事件解析
                 if (len > 1) ParseActiveReport(p, 1, len - 1);
                 break;
 
             default:
-                // SET 命令响应族 0x8400-0x843B（官方 SetCommandManager.a 统一处理）：
+                // SET 命令响应族 0x8400-0x843B：
                 // 载荷首字节为状态码(0=成功)。覆盖 SendEq(0x8406)/SendAnc(0x8404)/
                 // SendFeature(0x8403)/SendSpatialAudio(0x8422) 等所有写命令 ACK。
                 if (frame.Cmd >= 0x8400 && frame.Cmd <= 0x843B)
@@ -245,8 +250,8 @@ public class PodManager : IPodManager
                     break;
                 }
                 // RequestCommandManager 状态事件族 0x0500-0x05FF（耳机主动上报：下载/执行/播放
-                // 等一次性请求的状态；如 0x501）。官方仅记日志 + 内部 Handler，无对应 UI，这里静默。
-                // 注意：0x0504(EQ 变更通知) 已在上方独立分支处理，不会落到这里。
+                // 等一次性请求的状态；如 0x501）。仅记日志，无对应 UI，这里静默。
+                // 0x0504(EQ 变更通知) 已在上方独立分支处理，不会落到这里。
                 if (frame.Cmd >= 0x0500 && frame.Cmd <= 0x05FF)
                 {
                     Log.D("RFCOMM", $"DispatchFrame: RCM 状态事件 cmd=0x{frame.Cmd:X4} len={len}");
@@ -273,7 +278,7 @@ public class PodManager : IPodManager
             State.Connected = true;
             Log.D("RFCOMM", $"ConnectAsync: 连接成功,开始握手序列 (名称预判 Caps={Caps.ModelName})");
 
-            // ===== 阶段1：设备识别（官方先取 productId 精确定位能力）=====
+            // ===== 阶段1：设备识别（先取 productId 精确定位能力）=====
             // productId 属全局通用能力，先发；收到 0x8103 后 ParseProductId 会重建能力集。
             _transport.Send(OppoProtocol.CmdQueryProductId, OppoProtocol.PayEmpty);
             Thread.Sleep(120);
@@ -327,10 +332,30 @@ public class PodManager : IPodManager
         TrySend(OppoProtocol.CmdMultiConnectInfo, OppoProtocol.PayEmpty);
     }
 
+    /// <summary>多设备操作统一入口（能力门控 + 日志）。</summary>
+    private void SendMultiConnectOp(byte operateType, string targetAddress, string label, bool clearAddress = false)
+    {
+        Log.D("RFCOMM", $"多设备操作: {label} addr={targetAddress} type={operateType}");
+        TrySend(OppoProtocol.CmdOperateHandheld,
+                OppoProtocol.MultiConnectOpPayload(operateType, targetAddress, clearAddress));
+    }
+
+    public void SendMultiConnectConnect(string targetAddress) =>
+        SendMultiConnectOp(OppoProtocol.MultiOpConnect, targetAddress, "连接");
+
+    public void SendMultiConnectDisconnect(string targetAddress) =>
+        SendMultiConnectOp(OppoProtocol.MultiOpDisconnect, targetAddress, "断开");
+
+    public void SendMultiConnectSetPriority(string targetAddress) =>
+        SendMultiConnectOp(OppoProtocol.MultiOpSetPriority, targetAddress, "设为优先");
+
+    public void SendMultiConnectUnpair(string targetAddress) =>
+        SendMultiConnectOp(OppoProtocol.MultiOpUnpair, targetAddress, "取消配对");
+
     public void SendOperateHandheld(string targetAddress, bool connect = true)
     {
-        Log.D("RFCOMM", $"SendOperateHandheld addr={targetAddress} connect={connect}");
-        TrySend(OppoProtocol.CmdOperateHandheld, OppoProtocol.OperateHandheldPayload(targetAddress, connect));
+        if (connect) SendMultiConnectConnect(targetAddress);
+        else SendMultiConnectDisconnect(targetAddress);
     }
 
     public void SendAnc(string mode)
@@ -387,9 +412,9 @@ public class PodManager : IPodManager
     }
 
     /// <summary>
-    /// 游戏音效开关（官方 setGameSoundTypeEnable，命令 0x423 + [type][enable]）。
-    /// 关键：官方"关闭"不是发 enable=0，而是【选择 type 0】（gameSoundList 里的 {type:0} 即"关闭"项），
-    /// 且 enable 恒为 1（GameSetViewModel.h → E8/a.d(addr, type, true)）。
+    /// 游戏音效开关（命令 0x423 + [type][enable]）。
+    /// "关闭"不是发 enable=0，而是选择 type 0（gameSoundList 里的 {type:0} 即"关闭"项），
+    /// 且 enable 恒为 1。
     /// 开关状态由设备回读的 selectType 决定：selectType != 0 = 开、== 0 = 关。
     /// 故：开 → [GameSoundType, 1]；关 → [0, 1]。若发 [GameSoundType, 0]，设备 selectType 仍保留原 type，
     /// 会被回读判为"仍开启"（本次 bug 根因）。
@@ -403,7 +428,7 @@ public class PodManager : IPodManager
     }
 
     /// <summary>
-    /// 音效增强互斥组当前生效项（对齐官方 GameSoundMutexHelper：游戏音效 ↔ 调音 ↔ 空间音效互斥）。
+    /// 音效增强互斥组当前生效项（游戏音效 ↔ 调音 ↔ 空间音效互斥）。
     /// 从设备回读状态推导；无互斥组或都关时为 None。
     /// </summary>
     public AudioEnhancement CurrentEnhancement()
@@ -416,7 +441,7 @@ public class PodManager : IPodManager
 
     /// <summary>
     /// 设置音效增强（互斥组单选，静默切换）。选一项 → 只发该项 enable，
-    /// 设备固件自动关掉互斥的其它项（对齐官方，不重复下发关闭命令）。
+    /// 设备固件自动关掉互斥的其它项（不重复下发关闭命令）。
     /// mode=None 时关闭游戏音效（其它项本就是"开一个关其它"，无独立关闭语义）。
     /// </summary>
     public void SetAudioEnhancement(AudioEnhancement mode, string? eqName = null)
@@ -467,354 +492,6 @@ public class PodManager : IPodManager
     }
 
 
-    /// <summary>
-    /// 官方设备识别：0x8103 响应里拿到 productId 后，用它精确重定能力。
-    /// 这是优先路径；名称匹配（ConnectAsync 里的 Detect）只作连接前预判/回退。
-    /// </summary>
-    private void ParseProductId(byte[] pkt, int start, int len)
-    {
-        var payload = new byte[len];
-        Array.Copy(pkt, start, payload, 0, len);
-        var productId = OppoProtocol.ParseProductId(payload);
-        if (productId == null) return;
-
-        Log.D("RFCOMM", $"ParseProductId: productId={productId}");
-        var byId = DeviceCapabilities.DetectById(productId, _transport.DeviceName);
-        if (byId != null)
-        {
-            Log.D("RFCOMM", $"ParseProductId: 精确识别为 {byId.ModelName}");
-            Caps = byId;
-            RebuildCapabilitySet();   // 官方：能力随精确识别更新，后续命令按新能力集门控
-            StateChanged?.Invoke();
-        }
-    }
-
-    /// <summary>从帧载荷截取一段（DispatchFrame 里 start 恒为 0，这里统一成独立数组给解析器）。</summary>
-    private static byte[] Slice(byte[] pkt, int start, int len)
-    {
-        if (len <= 0) return Array.Empty<byte>();
-        var b = new byte[len];
-        Array.Copy(pkt, start, b, 0, len);
-        return b;
-    }
-
-    private void ParseBattery(byte[] pkt, int start, int len)
-    {
-        for (int i = 0; i + 1 < len; i += 2)
-        {
-            int idx = pkt[start + i];
-            int raw = pkt[start + i + 1];
-            int level = raw & 0x7F;
-            bool charging = (raw & 0x80) != 0;
-            var key = idx switch { 1 => "L", 2 => "R", 3 => "C", _ => null };
-            if (key != null) State.Battery[key] = (level, charging);
-        }
-        StateChanged?.Invoke();
-    }
-
-    private void ParseAnc(byte[] pkt, int start, int len)
-    {
-        // 0x810C 响应格式：[byte0][subType][mType][bitmap...]。subType=data[1]（官方 o.D 分发）：
-        //   1 = CurrentNoiseModeInfo（手动档位，msg 0x17）
-        //   2/3 = NoiseReductionInfo（旧版，msg 0x14/0x1f）
-        //   4 = IntelligentNoiseModeInfo（智能实时档位，msg 0x2c）← 由 [0x04,0x01] 查询触发
-        // 位图从 mType(data[2]) 起，首个置位 bit = 设备实时算出的档位；位图全 0 表示当前无实时档位。
-        if (len >= 5 && pkt[start + 1] == 0x04)
-        {
-            var rt = ParseNoiseBitmap(pkt, start + 2, len - 2);   // 从 mType 起
-            // 有实时档位（如深度/中度/轻度）才记；空位图表示设备暂未算出，清空提示。
-            State.IntelligentRealtime = (rt != null && rt != "Smart") ? rt : "";
-            Log.D("RFCOMM", $"ParseAnc: 智能实时(查询) -> {(string.IsNullOrEmpty(State.IntelligentRealtime) ? "(无)" : State.IntelligentRealtime)}");
-            StateChanged?.Invoke();
-            return;   // 主档位由手动查询(subType=1)响应设置，这里只管实时档位
-        }
-
-        for (int i = 0; i + 3 < len; i++)
-        {
-            if (pkt[start + i] == 0x01 && pkt[start + i + 1] == 0x01)
-            {
-                byte v1 = pkt[start + i + 2], v2 = pkt[start + i + 3];
-
-                // 优先：按型号 AncIndexToName，把位图里置位的 bit -> protocolIndex -> 模式名
-                if (Caps.AncIndexToName.Count > 0)
-                {
-                    int value = v1 + v2 * 256;
-                    int bit = 1;
-                    for (int idx = 0; idx < 16; idx++)
-                    {
-                        if ((value & bit) != 0 && Caps.AncIndexToName.TryGetValue((byte)idx, out var name))
-                        {
-                            State.AncMode = name;
-                            // 非智能档位时清除智能实时提示（智能实时值只在 Smart 模式有意义）
-                            if (name != "Smart") State.IntelligentRealtime = "";
-                            break;
-                        }
-                        bit *= 2;
-                    }
-                }
-                // 回退：静态表（含旧版值交换）
-                else if (OppoProtocol.AncValues.TryGetValue((v1, v2), out var mode))
-                {
-                    State.AncMode = Caps.IsLegacyAnc ? OppoProtocol.LegacyAncSwap(mode) : mode;
-                }
-            }
-        }
-        StateChanged?.Invoke();
-    }
-
-    /// <summary>
-    /// 解析 0x0204 主动通知事件。start 指向子类型字节（payload[0]），
-    /// 分发逻辑对齐官方 NotificationCommandManager.b()：payload[start]=subType，事件体从 start+1 起。
-    /// </summary>
-    private void ParseActiveReport(byte[] pkt, int start, int len)
-    {
-        if (len < 1) return;
-        int subType = pkt[start];
-        int bodyStart = start + 1;          // 事件体起点（官方 nextOffset = offset+1）
-        int bodyLen = len - 1;
-        Log.D("RFCOMM", $"ParseActiveReport: subType=0x{subType:X2}({OppoProtocol.ActiveReportName(subType)}) len={len}");
-
-        switch (subType)
-        {
-            case OppoProtocol.EvtBattery:        // 0x01 电池 List<BatteryInfo>：[n][deviceType,level+charging]×n
-                ParseBatteryList(pkt, bodyStart, bodyLen);
-                break;
-            case OppoProtocol.EvtEarBudsStatus:  // 0x02 佩戴/入耳状态：[n][comp,status]×n
-                ParseWearingData(pkt, start, len);
-                break;
-            case OppoProtocol.EvtNoiseMode:      // 0x03 降噪变更（次字节区分旧/新/智能）
-                ParseNoiseChange(pkt, bodyStart, bodyLen);
-                break;
-            case OppoProtocol.EvtGameMode:       // 0x05 游戏模式开关
-                if (bodyLen >= 1)
-                {
-                    State.GameMode = pkt[bodyStart] != 0;
-                    Log.D("RFCOMM", $"ParseActiveReport: 游戏模式 -> {State.GameMode}");
-                }
-                break;
-            case OppoProtocol.EvtZenMode:        // 0x0A 禅模式开关
-                if (bodyLen >= 1)
-                    Log.D("RFCOMM", $"ParseActiveReport: 禅模式 -> {pkt[bodyStart]}");
-                break;
-            case OppoProtocol.EvtMultiConnect:   // 0x06 多设备连接状态：主动触发一次列表刷新
-                Log.D("RFCOMM", "ParseActiveReport: 多连接状态变更，刷新列表");
-                _transport.Send(OppoProtocol.CmdMultiConnectInfo, OppoProtocol.PayEmpty);
-                break;
-            case OppoProtocol.EvtCompactness:    // 0x04 贴合检测
-            case OppoProtocol.EvtHearingDetect:  // 0x08 听力检测
-            case OppoProtocol.EvtCodecType:      // 0x09 编解码
-            case OppoProtocol.EvtPersonalNoise:  // 0x0B 个性化降噪
-            case OppoProtocol.EvtTriangle:       // 0x0D 空间音频三角
-            case OppoProtocol.EvtEarScan:        // 0x0E 耳道扫描
-            case OppoProtocol.EvtGaming:         // 0x0F 公共事件
-            case OppoProtocol.EvtOneshot:        // 0x10 Oneshot
-            case OppoProtocol.EvtToneChange:     // 0x11 耳音调
-                // 已识别但当前 UI 未使用，仅记录（避免"未处理"刷屏）
-                break;
-            default:
-                Log.D("RFCOMM", $"ParseActiveReport: 未识别子类型 0x{subType:X2}");
-                break;
-        }
-        StateChanged?.Invoke();
-    }
-
-    /// <summary>解析电池列表事件体：[count][deviceType,level+charging]×count（官方 CommandUtil.d + BatteryInfo）。</summary>
-    private void ParseBatteryList(byte[] pkt, int start, int len)
-    {
-        if (len < 1) return;
-        int count = pkt[start];
-        for (int j = 0; j < count && start + 1 + j * 2 + 1 < start + len; j++)
-        {
-            int idx = pkt[start + 1 + j * 2];
-            int raw = pkt[start + 1 + j * 2 + 1];
-            int level = raw & 0x7F;
-            bool charging = (raw & 0x80) != 0;
-            var key = idx switch { 1 => "L", 2 => "R", 3 => "C", _ => null };
-            if (key != null) State.Battery[key] = (level, charging);
-        }
-    }
-
-    /// <summary>
-    /// 解析降噪变更通知（0x0204 子类型 0x03）。事件体首字节为区分符（官方 NCM.b case 0x3）：
-    ///   2 = 旧版 NoiseReductionInfo
-    ///   1 = 新版 CurrentNoiseModeInfo（[mType][bitmap]，手动档位）
-    ///   4 = IntelligentNoiseModeInfo（智能切换：位图里置位的 bit = 设备实时计算出的当前档位）
-    /// 位图格式三者一致：置位的 bit → protocolIndex → 按型号 AncIndexToName 得模式名。
-    /// </summary>
-    private void ParseNoiseChange(byte[] pkt, int start, int len)
-    {
-        if (len < 1) return;
-        int kind = pkt[start];
-        int infoStart = start + 1;
-        int infoLen = len - 1;
-
-        if (kind == 1)  // CurrentNoiseModeInfo：手动选中的档位
-        {
-            var name = ParseNoiseBitmap(pkt, infoStart, infoLen);
-            if (name != null)
-            {
-                State.AncMode = name;
-                State.IntelligentRealtime = "";  // 手动档位，清除智能实时提示
-                Log.D("RFCOMM", $"ParseNoiseChange: 手动 ANC -> {name}");
-            }
-        }
-        else if (kind == 4)  // IntelligentNoiseModeInfo：智能切换，位图首个置位 bit = 实时档位
-        {
-            var name = ParseNoiseBitmap(pkt, infoStart, infoLen);
-            if (name != null)
-            {
-                State.AncMode = "Smart";              // 当前主档位是"智能切换"
-                State.IntelligentRealtime = name;     // 设备实时算出的档位（深度/中度/轻度）
-                Log.D("RFCOMM", $"ParseNoiseChange: 智能实时 -> {name}");
-            }
-        }
-        else  // 旧版(2) 或未知：型号差异大，触发一次主动查询由 ParseAnc 统一处理
-        {
-            _transport.Send(OppoProtocol.CmdQueryAnc, OppoProtocol.PayQueryAnc);
-        }
-        StateChanged?.Invoke();
-    }
-
-    /// <summary>
-    /// 解析降噪位图（[mType][bitmap...]）。mType=1(位图) 时取首个置位 bit → protocolIndex → 模式名。
-    /// 对齐官方 CurrentNoiseModeInfo / IntelligentNoiseModeInfo.getCurrentNoiseReductionModeIndex()。
-    /// 返回模式名，无法解析返回 null。
-    /// </summary>
-    private string? ParseNoiseBitmap(byte[] pkt, int start, int len)
-    {
-        if (len < 2 || Caps.AncIndexToName.Count == 0) return null;
-        int mType = pkt[start];
-        if (mType != 1) return null;  // mType=2 是等级模式，这里只处理位图档位
-
-        // 位图从 start+1 起，低位在前；首个置位 bit 即当前档位（官方取 index 0 起第一个 true）
-        int value = 0;
-        for (int b = 0; start + 1 + b < start + len && b < 4; b++)
-            value |= (pkt[start + 1 + b] & 0xFF) << (b * 8);
-        int bit = 1;
-        for (int i = 0; i < 32; i++)
-        {
-            if ((value & bit) != 0 && Caps.AncIndexToName.TryGetValue((byte)i, out var name))
-                return name;
-            bit *= 2;
-        }
-        return null;
-    }
-
-    private void ParseWearingData(byte[] pkt, int start, int len)
-    {
-        if (len < 3) return;
-        int count = pkt[start + 1];
-        for (int j = 0; j < count && start + 2 + j * 2 + 1 < start + len; j++)
-        {
-            int comp = pkt[start + 2 + j * 2];
-            int st = pkt[start + 2 + j * 2 + 1];
-            string status = st switch
-            {
-                0 => "已断连", 4 => "入盒", 5 => "摘下", 7 => "佩戴", _ => "?" + st
-            };
-            if (comp == 1) State.WearingL = status;
-            else if (comp == 2) State.WearingR = status;
-        }
-        Log.D("RFCOMM", $"ParseWearingData: L='{State.WearingL}' R='{State.WearingR}'");
-    }
-
-    private void ParseEq(byte[] pkt, int start, int len)
-    {
-        if (len >= 2)
-            State.EqPreset = Caps.EqNames.GetValueOrDefault(pkt[start + 1], "?");
-        StateChanged?.Invoke();
-    }
-
-    private void ParseBatchStatus(byte[] pkt, int start, int len)
-    {
-        for (int i = 0; i + 1 < len; i += 2)
-        {
-            byte feature = pkt[start + i];
-            byte value = pkt[start + i + 1];
-            if (feature == OppoProtocol.FeatureGameMain)
-                State.GameMode = value != 0;
-            else if (feature == OppoProtocol.FeatureDualDevice)
-                State.DualDevice = value != 0;
-            else if (feature == OppoProtocol.FeatureSpatial)
-                State.SpatialSound = value != 0;
-        }
-        StateChanged?.Invoke();
-    }
-
-    /// <summary>解析多设备连接列表响应 (cmd 0x8112)</summary>
-    private void ParseMultiConnect(byte[] pkt, int start, int len)
-    {
-        try
-        {
-            Log.D("RFCOMM", "ParseMultiConnect: len=" + len + ", full=" + BitConverter.ToString(pkt, start, Math.Min(len, 48)));
-            var devices = new List<ConnectedDeviceInfo>();
-            if (len < 2) return;
-
-            int count = pkt[start + 1];
-            if (count <= 0 || count > 8)
-            {
-                Log.D("RFCOMM", "ParseMultiConnect: invalid count=" + count);
-                return;
-            }
-
-            int pos = start + 2;
-            for (int i = 0; i < count && pos + 8 < start + len; i++)
-            {
-                // 官方 CommandUtil.h 布局：[addr(6)][len@6(1)][connState@7(1)][flag@8(1)][nameLen@9(1)][name]。
-                //   connState：0=断开 2=已连接；flag 位：bit0=当前设备 bit1=音频激活 bit2=主音频，bit3-5=设备类型。
-                //   [+6] 字节官方仅用于计算下一元素偏移，不作展示字段。
-                var addr = string.Join(":", Enumerable.Range(0, 6).Select(j => pkt[pos + j].ToString("X2")));
-                pos += 6;
-
-                int elemByte6 = pkt[pos++]; // [+6] 官方偏移用字节，展示层不用
-                int connState = pkt[pos++]; // [+7] 0=断开 2=已连接
-                int flag = pkt[pos++];      // [+8] 真正的状态位
-                int nameLen = pkt[pos++];   // [+9]
-
-                if (nameLen < 0 || pos + nameLen > start + len)
-                {
-                    Log.D("RFCOMM", "ParseMultiConnect: device[" + i + "] invalid nameLen=" + nameLen);
-                    break;
-                }
-
-                string deviceName = nameLen > 0
-                    ? System.Text.Encoding.UTF8.GetString(pkt, pos, nameLen).TrimEnd("\0".ToCharArray())
-                    : "Device " + addr.Substring(Math.Max(0, addr.Length - 5));
-                pos += Math.Max(nameLen, 0);
-
-                bool isCurrent = (flag & 0x01) != 0;      // 官方 bit0 = 当前设备
-                bool isAudioActive = (flag & 0x02) != 0;  // 官方 bit1 = 音频激活
-                bool isMainAudio = (flag & 0x04) != 0;    // 官方 bit2 = 主音频
-
-                devices.Add(new ConnectedDeviceInfo
-                {
-                    Address = addr,
-                    DeviceName = deviceName,
-                    ConnectionState = connState,
-                    DeviceType = 0,
-                    IsCurrentDevice = isCurrent,
-                    IsAudioActive = isAudioActive,
-                    IsMainAudioDevice = isMainAudio,
-                });
-                Log.D("RFCOMM", "ParseMultiConnect: device[" + i + "] addr=" + addr + ", name=\"" + deviceName + "\", connState=" + connState + ", flag=0x" + flag.ToString("X2") + ", cur=" + isCurrent);
-            }
-
-            if (devices.Count > 0)
-            {
-                // 当前设备排最前
-                devices = devices.OrderByDescending(d => d.IsCurrentDevice).ThenBy(d => d.DeviceName).ToList();
-                State.ConnectedDevices = devices;
-                State.MultiConnectListUpdatedAt = DateTime.Now;
-                Log.D("RFCOMM", "ParseMultiConnect: 列表更新 " + devices.Count + " 个设备: " + string.Join(", ", devices.Select(d => d.DeviceName)));
-                StateChanged?.Invoke();
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Ex("RFCOMM", "ParseMultiConnect", ex);
-        }
-    }
-
     public async Task PollAsync(CancellationToken ct)
     {
         await Task.Run(() =>
@@ -830,7 +507,7 @@ public class PodManager : IPodManager
                     Thread.Sleep(100);
                     TrySend(OppoProtocol.CmdQueryAnc, OppoProtocol.PayQueryAnc);
                     Thread.Sleep(100);
-                    // 智能切换档位需单独查询（官方 [0x03,0x01]），拿设备实时计算档位
+                    // 智能切换档位需单独查询（[0x03,0x01]），拿设备实时计算档位
                     if (HasSmartMode())
                     {
                         TrySend(OppoProtocol.CmdQueryAnc, OppoProtocol.PayQueryAncIntelligent);
@@ -872,6 +549,13 @@ public class PodManager : IPodManager
                         _transport.Poll(400);
 
                         if (TrySend(OppoProtocol.CmdMultiConnectInfo, OppoProtocol.PayEmpty))
+                        {
+                            Thread.Sleep(100);
+                            _transport.Poll(400);
+                        }
+
+                        // 多连接优先设备/自动切换（0x0132）
+                        if (TrySend(OppoProtocol.CmdQueryMultiPriority, OppoProtocol.PayEmpty))
                         {
                             Thread.Sleep(100);
                             _transport.Poll(400);

@@ -11,7 +11,7 @@ static class Program
             .WithInterFont()
             .LogToTrace();
 
-    /// <summary>Avalonia desktop entry point (AOT-compatible).</summary>
+    /// <summary>Avalonia 桌面入口点（AOT 兼容）。</summary>
     public static void Main(string[] args)
         => BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
 }

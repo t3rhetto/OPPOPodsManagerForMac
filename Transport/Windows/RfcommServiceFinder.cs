@@ -8,7 +8,7 @@ using Windows.Devices.Enumeration;
 namespace OppoPodsManager;
 
 /// <summary>
-/// 官方形式的经典蓝牙(RFCOMM/SPP)服务发现：用 WinRT DeviceInformation 枚举，
+/// 经典蓝牙(RFCOMM/SPP)服务发现：用 WinRT DeviceInformation 枚举，
 /// 返回可直接用于连接的 RfcommDeviceService。按优先级：
 ///   1) 按 OPPO SPP 服务 UUID 枚举（RfcommDeviceService.GetDeviceSelector）——最精确；
 ///   2) 按已配对经典设备的品牌名匹配，再取其上的 SPP 服务。

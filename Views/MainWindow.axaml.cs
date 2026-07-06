@@ -346,7 +346,7 @@ public partial class MainWindow : SukiWindow
         HighlightAnc();
 
         // 智能切换：显示设备实时计算出的档位（如"实时计算：深度"）。
-        // 注意 Smart 在容器型设备是子档位(_ancLevel)，在扁平型是主模式(_ancMain)，两者都要判。
+        // Smart 在容器型设备是子档位(_ancLevel)，在扁平型是主模式(_ancMain)，两者都要判。
         if ((_ancMain == "Smart" || _ancLevel == "Smart") && !string.IsNullOrEmpty(s.IntelligentRealtime))
         {
             AncRealtimeHint.Text = $"实时计算：{AncModeLabel(s.IntelligentRealtime)}";

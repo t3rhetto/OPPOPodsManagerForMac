@@ -13,12 +13,12 @@ using Windows.Storage.Streams;
 namespace OppoPodsManager;
 
 /// <summary>
-/// 官方形式的 BLE GATT 传输（WinRT Windows.Devices.Bluetooth）。
+/// BLE GATT 传输（WinRT Windows.Devices.Bluetooth）。
 /// 服务/特征 UUID 与 melody APK 一致：
 ///   Service 0000079A-…、TX(Write) 0000079B-…、RX(Notify) 0000079C-…、CCCD 2902。
 /// 帧格式用 GattFrameCodec（melody 5 字节头，无 SPP 0xAA 外壳）。
 ///
-/// 设备发现采用官方形式的 WinRT 枚举（DeviceInformation），按优先级：
+/// 设备发现采用 WinRT 枚举（DeviceInformation），按优先级：
 ///   1) 按 melody GATT 服务 UUID 枚举（GetDeviceSelectorFromUuid）——最精确；
 ///   2) 按已配对 BLE 设备的品牌名匹配（BluetoothLEDevice 选择器）；
 ///   3) 最后回退到注册表定位的经典蓝牙地址（IDeviceLocator）——多为 BR/EDR 地址，成功率低。
@@ -46,6 +46,7 @@ public sealed class WindowsGattTransport : IPodTransport
     private GattCharacteristic? _rxChar;
     private bool _disposed;
 
+    /// <summary>默认用注册表回溯发现器；可注入其它 IDeviceLocator。</summary>
     public WindowsGattTransport() : this(new WindowsBluetoothLocator()) { }
     public WindowsGattTransport(IDeviceLocator locator) { _locator = locator; }
 
@@ -56,6 +57,7 @@ public sealed class WindowsGattTransport : IPodTransport
     public event Action<PodFrame>? FrameReceived;
     public event Action? Disconnected;
 
+    /// <summary>WinRT 枚举发现 BLE 设备 → 取 GATT 服务/特征 → 订阅通知 → 完成连接。</summary>
     public bool Connect()
     {
         try
@@ -134,7 +136,7 @@ public sealed class WindowsGattTransport : IPodTransport
     }
 
     /// <summary>
-    /// 官方形式设备发现：优先 WinRT 枚举（按服务 UUID → 按配对 BLE 品牌名），
+    /// 设备发现：优先 WinRT 枚举（按服务 UUID → 按配对 BLE 品牌名），
     /// 最后才回退到注册表定位的经典地址。返回可用的 BluetoothLEDevice，找不到返回 null。
     /// </summary>
     private async Task<BluetoothLEDevice?> DiscoverDeviceAsync()
@@ -245,6 +247,7 @@ public sealed class WindowsGattTransport : IPodTransport
         catch (Exception ex) { Log.Ex("GATT", "OnRxValueChanged", ex); }
     }
 
+    /// <summary>编码帧并通过 TX 特征写入（WriteWithoutResponse，3s 超时）。</summary>
     public void Send(ushort cmd, byte[] payload)
     {
         var tx = _txChar;
@@ -257,7 +260,7 @@ public sealed class WindowsGattTransport : IPodTransport
             var writer = new DataWriter();
             writer.WriteBytes(bytes);
             var buffer = writer.DetachBuffer();
-            // 官方用 WRITE_TYPE_NO_RESPONSE
+            // 用 WRITE_TYPE_NO_RESPONSE
             RunSync(async () =>
             {
                 await tx.WriteValueAsync(buffer, GattWriteOption.WriteWithoutResponse);
@@ -268,6 +271,7 @@ public sealed class WindowsGattTransport : IPodTransport
         catch (Exception ex) { Log.Ex("GATT", $"Send cmd=0x{cmd:X4}", ex); }
     }
 
+    /// <summary>取出已入队帧交付上层（通知异步入队，这里同步取出交付）。</summary>
     public void Poll(int timeoutMs)
     {
         // 通知是异步回调，这里在时间预算内取出已入队的帧交付上层
@@ -298,12 +302,14 @@ public sealed class WindowsGattTransport : IPodTransport
         Disconnected?.Invoke();
     }
 
+    /// <summary>断开连接并释放 BLE 资源。</summary>
     public void Close()
     {
         IsConnected = false;
         Cleanup();
     }
 
+    /// <summary>逐一解绑事件 + 释放特征/服务/设备对象。</summary>
     private void Cleanup()
     {
         lock (_lock)
@@ -328,6 +334,7 @@ public sealed class WindowsGattTransport : IPodTransport
         catch (Exception ex) { Log.Ex("GATT", "RunSync", ex); return false; }
     }
 
+    /// <summary>释放 BLE 传输资源（幂等）。</summary>
     public void Dispose()
     {
         if (_disposed) return;

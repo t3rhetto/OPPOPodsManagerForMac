@@ -4,15 +4,13 @@ using System.Diagnostics;
 namespace OppoPodsManager;
 
 /// <summary>
-/// 统一调试日志封装。底层走 <see cref="Debug.WriteLine(string)"/>（OutputDebugString），
-/// 在 VS 输出窗口 / DebugView 可见；Release 构建下因 [Conditional("DEBUG")] 整句被编译器移除，
-/// 连参数拼接都不会执行，零性能负担。
-///
+/// 调试日志封装。通过 <see cref="Debug.WriteLine(string)"/> 输出（OutputDebugString），
+/// VS 输出窗口 / DebugView 可见。Release 构建下 [Conditional("DEBUG")] 使调用被编译器移除。
 /// 用法：
 ///   Log.D("BT", "connect ok");
 ///   Log.D("BT", $"recv {n} bytes");
 ///   Log.Ex("BT", "Connect failed", ex);
-/// 输出形如： 12:03:45.678 [BT] connect ok
+/// 输出格式：HH:mm:ss.fff [tag] message
 /// </summary>
 public static class Log
 {
@@ -23,7 +21,7 @@ public static class Log
         Debug.WriteLine($"{DateTime.Now:HH:mm:ss.fff} [{tag}] {message}");
     }
 
-    /// <summary>记录一个操作的成功/失败结果（ok=true→OK，false→FAIL）。</summary>
+    /// <summary>记录操作结果（OK/FAIL）。</summary>
     [Conditional("DEBUG")]
     public static void Result(string tag, string operation, bool ok, string? detail = null)
     {

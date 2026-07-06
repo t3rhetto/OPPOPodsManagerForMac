@@ -5,7 +5,7 @@ using System.Runtime.Versioning;
 namespace OppoPodsManager;
 
 /// <summary>
-/// 官方形式的经典蓝牙(RFCOMM/SPP)设备定位：用 RfcommServiceFinder 做 WinRT 枚举，
+/// 经典蓝牙(RFCOMM/SPP)设备定位：用 RfcommServiceFinder 做 WinRT 枚举，
 /// 从命中的服务取 48 位蓝牙地址与名称，供 SppTransport 的 Winsock AF_BTH 连接使用。
 /// WinRT 枚举未命中时回退注册表扫描（WindowsBluetoothLocator）。
 /// </summary>

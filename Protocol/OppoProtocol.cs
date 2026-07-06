@@ -1,10 +1,9 @@
 using System;
-using System.Collections.Generic;
 
 namespace OppoPodsManager;
 
-/// <summary>OPPO 私有 RFCOMM 协议定义。命令字和 feature ID 来自逆向工程，各型号通用。</summary>
-public static class OppoProtocol
+/// <summary>OPPO 私有 RFCOMM 协议定义。命令字和 feature ID 各型号通用。</summary>
+public static partial class OppoProtocol
 {
     /// <summary>OPPO SPP 服务 UUID，所有支持设备共用</summary>
     public static readonly Guid OppoSppUuid = new("0000079A-D102-11E1-9B23-00025B00A5A5");
@@ -20,7 +19,7 @@ public static class OppoProtocol
     public const ushort CmdAnc = 0x0404;             // 设置降噪模式
     public const ushort CmdQueryAnc = 0x010C;        // 查询降噪状态
     public const ushort CmdAncResp = 0x810C;         // 降噪状态响应
-    public const ushort CmdActiveReport = 0x0204;    // 主动通知事件（payload[0]=子类型，官方 NotificationCommandManager.b 分发）
+    public const ushort CmdActiveReport = 0x0204;    // 主动通知事件（payload[0]=子类型，NotificationCommandManager 分发）
     public const ushort CmdSetFeature = 0x0403;      // 设置功能开关
     public const ushort CmdSetEq = 0x0406;           // 设置 EQ 预设
     public const ushort CmdQueryEq = 0x010F;         // 查询当前 EQ
@@ -33,31 +32,30 @@ public static class OppoProtocol
     public const ushort CmdMultiConnectInfo = 0x0112;  // 查询多设备连接列表
     public const ushort CmdMultiConnectResp = 0x8112;  // 多设备列表响应
     public const ushort CmdOperateHandheld = 0x0429;   // 切换多设备中的活动设备
-    public const ushort CmdQueryProductId = 0x0103;    // 查询远程 Product ID（官方设备识别主键）
+    public const ushort CmdQueryProductId = 0x0103;    // 查询远程 Product ID（设备识别主键）
     public const ushort CmdProductIdResp = 0x8103;     // Product ID 响应
 
-    // ========== 官方完整命令目录（0x100-0x133 查询 / 0x400-0x43B 设置）==========
-    // 来源：melody 16.8.1 逆向 —— 命令号权威取自 PollCommandManager/SetCommandManager 的
+    // ========== 完整命令目录（0x100-0x133 查询 / 0x400-0x43B 设置）==========
+    // 来源：melody 16.8.1 逆向，命令号取自 PollCommandManager/SetCommandManager 的
     //   "<fnName> UNSUPPORTED cmd=0x<num>" 日志（LA7/b、LB7/h、LC7/a、Lm、Ln、Lu 等 R8 合成类）。
     // 命令层用 melody 命令号，经 SPP 0xAA 帧承载；查询响应 = 命令 | 0x8000。
-    // 标注 [已验证] = 实机日志确认收发。全部命令名与官方 getXxx/setXxx 方法一一对应。
+    // 命令名与 melody getXxx/setXxx 方法对应。
 
     // ----- 设备信息查询（0x1xx，getXxx；响应 0x81xx）-----
     public const ushort CmdQueryCapability   = 0x0100;  // getRemoteCapability 基础能力
     public const ushort CmdQueryMtu          = 0x0101;  // getRemoteMTU 远程 MTU
     public const ushort CmdQueryVendorId     = 0x0102;  // getRemoteVID 远程 Vendor ID
-    // 0x0103 = getRemotePID（= CmdQueryProductId，上方已定义） [已验证]
-    public const ushort CmdQueryVersion      = 0x0105;  // getRemoteVersion 远程固件版本 [已验证]
-    // 0x0106 = getBatteryLevel（= CmdBattery，上方已定义） [已验证]
+    // 0x0103 = getRemotePID（= CmdQueryProductId，上方已定义）
+    public const ushort CmdQueryVersion      = 0x0105;  // getRemoteVersion 远程固件版本
     public const ushort CmdQueryUpgradeCap   = 0x0107;  // getUpgradeCapability 升级能力
     public const ushort CmdQueryFunctionKey  = 0x0108;  // getKeyFunction 按键功能（设置为 setKeyFunction 0x0402）
     public const ushort CmdQueryEarStatus    = 0x0109;  // getEarBudsStatus 耳机佩戴状态
     public const ushort CmdQueryColorId      = 0x010B;  // getEarBudsColorID 耳机颜色 ID
     // 0x010C = getCurrentNoiseReductionMode / getNoiseReductionSwitchMode / getIntelligentNoiseReductionMode
-    //          （= CmdQueryAnc，上方已定义）[已验证]
-    public const ushort CmdQueryFeatureState = 0x010D;  // getFeatureSwitchStatus 功能开关状态（= CmdBatchQuery）[已验证]
-    // 0x010F = getCurrentEqualizerMode（= CmdQueryEq，上方已定义）[已验证]
-    // 0x0112 = getMultiConnectInformation（= CmdMultiConnectInfo，上方已定义）[已验证]
+    //          （= CmdQueryAnc，上方已定义）
+    public const ushort CmdQueryFeatureState = 0x010D;  // getFeatureSwitchStatus 功能开关状态（= CmdBatchQuery）
+    // 0x010F = getCurrentEqualizerMode（= CmdQueryEq，上方已定义）
+    // 0x0112 = getMultiConnectInformation（= CmdMultiConnectInfo，上方已定义）
     public const ushort CmdQueryCodecType    = 0x0114;  // getCurrentCodecType 当前编解码器类型
     public const ushort CmdQueryHearing      = 0x0115;  // getHearingEnhancementData 听力增强数据
     public const ushort CmdQueryHearingFilter = 0x0116; // getHearingEnhancementFilterData 听力增强滤波数据
@@ -75,7 +73,7 @@ public static class OppoProtocol
     public const ushort CmdQuerySpineHistory = 0x0126;  // getSpineHistoryData 脊柱历史数据
     public const ushort CmdQueryScreenOffDelay = 0x0127; // getScreenOffBroadcastDelayTime 息屏广播延时
     public const ushort CmdQuerySpineCalib   = 0x0129;  // getSpineCalibration 脊柱校准状态
-    // 0x012A：官方 getHeadsetSpatialType —— 查询空间音频三模式当前值（Off/Fixed/Track）。
+    // 0x012A：getHeadsetSpatialType —— 查询空间音频三模式当前值（Off/Fixed/Track）。
     // 响应 0x812A = [status(1)][spatialType(1)]，spatialType 0=Off 1=Fixed 2=Track。
     public const ushort CmdQueryHeadsetSpatial = 0x012A;  // getHeadsetSpatialType 空间音频三模式当前值
     public const ushort CmdHeadsetSpatialResp  = 0x812A;  // 空间音频三模式查询响应
@@ -83,16 +81,18 @@ public static class OppoProtocol
     public const ushort CmdQueryAiSummary    = 0x012E;  // getAISummaryType AI 摘要类型
     public const ushort CmdQueryVolumeValue  = 0x0130;  // getVolumeValueInfo 音量档位信息
     public const ushort CmdQueryAiTranslate  = 0x0131;  // getAITranslationAppStatus AI 翻译 App 状态
+    // 0x012B = getGameSoundInfo（= CmdQueryGameSound）
     public const ushort CmdQueryMultiPriority = 0x0132; // getMultiConnectPriorityDevice 多连接优先设备
+    public const ushort CmdMultiPriorityResp  = 0x8132; // 多连接优先设备响应
     public const ushort CmdQueryTapLevel     = 0x0133;  // getTapLevelSettingValue 敲击力度档位
 
     // ----- 高级设置（0x4xx，setXxx；响应 0x84xx，SetCommandManager 统一处理）-----
     public const ushort CmdSetFindMode       = 0x0400;  // setFindMode 查找耳机模式（旧注释误标为"全局开关"）
     public const ushort CmdSetKeyFunction    = 0x0402;  // setKeyFunction 设置按键功能
-    public const ushort CmdSetSwitchFeature  = 0x0403;  // setSwitchFeature 通用功能开关（= CmdSetFeature）[featureType][status] [已验证]
-    public const ushort CmdSetNoiseMode      = 0x0404;  // setCurrentNoiseReduction / setSupportNoiseReduction（= CmdAnc）[已验证]
+    public const ushort CmdSetSwitchFeature  = 0x0403;  // setSwitchFeature 通用功能开关（= CmdSetFeature）[featureType][status]
+    public const ushort CmdSetNoiseMode      = 0x0404;  // setCurrentNoiseReduction / setSupportNoiseReduction（= CmdAnc）
     public const ushort CmdSetCompactness    = 0x0405;  // switchCompactnessDetectionStatus 贴合度检测开关
-    public const ushort CmdSetEqPreset       = 0x0406;  // setEqMode 设置 EQ 预设（= CmdSetEq）[已验证]
+    public const ushort CmdSetEqPreset       = 0x0406;  // setEqMode 设置 EQ 预设（= CmdSetEq）
     public const ushort CmdSetRelatedDevice  = 0x0408;  // setRelatedDeviceInfo 关联设备信息
     public const ushort CmdSetHearingDetect  = 0x040D;  // processHearingEnhancementDetection 听力增强检测
     public const ushort CmdSetCodec          = 0x040E;  // 设置编解码器（setCodecType）
@@ -111,14 +111,14 @@ public static class OppoProtocol
     public const ushort CmdSetBuildModel     = 0x041F;  // setDeviceBuildModel 设置机型 Build.MODEL
     public const ushort CmdSetGameStatus     = 0x0420;  // setGameStatus 游戏模式状态（独立命令，非 feature 开关）
     public const ushort CmdSetSpineRange     = 0x0421;  // setSpineRangeDetection 脊柱范围检测
-    // 0x0422 = setHeadsetSpatialType（= CmdSpatialAudio，上方已定义，空间音频三模式）[已验证]
-    public const ushort CmdSetFeatureSwitch  = 0x0423;  // setGameSoundTypeEnable 游戏音效 [type][enable] [已验证]
+    // 0x0422 = setHeadsetSpatialType（= CmdSpatialAudio，上方已定义，空间音频三模式）
+    public const ushort CmdSetFeatureSwitch  = 0x0423;  // setGameSoundTypeEnable 游戏音效 [type][enable]
     public const ushort CmdSetLeAudioAction  = 0x0424;  // setLeAudioAction LE Audio 动作
     public const ushort CmdSetAiSummary      = 0x0425;  // setAISummaryType AI 摘要类型
     public const ushort CmdSetAiPromptSound  = 0x0426;  // syncAIPromptSound AI 提示音同步
     public const ushort CmdSetVolumeValue    = 0x0427;  // setVolumeValueInfo 音量档位
     public const ushort CmdSetTranslateApp   = 0x0428;  // setTranslationAppStatus 翻译 App 状态
-    // 0x0429 = operateMultiConnectHandheldDevice（= CmdOperateHandheld，上方已定义）[已验证]
+    // 0x0429 = operateMultiConnectHandheldDevice（= CmdOperateHandheld，上方已定义）
     public const ushort CmdSetTapLevel       = 0x042D;  // setTapLevelSettingValue 敲击力度档位
     public const ushort CmdSetVoiceMultiConv = 0x042E;  // setVoiceMultiConversationStatus 多方通话状态
     public const ushort CmdFindDevice        = 0x0435;  // 查找设备（旧系；查找模式实际走 setFindMode 0x0400）
@@ -126,18 +126,14 @@ public static class OppoProtocol
     // ----- 响应 -----
     public const ushort CmdSpatialAudioResp  = 0x8422;  // 空间音频 SET 响应（0x0422 ACK）
 
-    // 已验证收发（实机日志确认）：0x0103/0x0106/0x010C/0x010F/0x010D/0x0112/0x0204/0x0205/
-    //   0x0404/0x0406/0x0403/0x0422/0x0423/0x0429/0x012A/0x012B 及其 0x8xxx 响应、
-    //   0x8200-0x8205、0x0500-0x05FF。
-
-    // ========== 通知注册响应族（官方 NotificationCommandManager.c 分发，耳机→手机）==========
+    // ========== 通知注册响应族（NotificationCommandManager 分发，耳机→手机）==========
     public const ushort CmdNotifyCapabilityResp = 0x8200;  // 通知能力响应（保存耳机支持的事件集）
     public const ushort CmdRegisterNotifyResp   = 0x8201;  // 单条注册通知响应（含 status+event）
     public const ushort CmdRegisterNotifyEvent  = 0x8202;  // 注册后携带的事件（内部再走子类型分发）
     public const ushort CmdCancelNotifyResp     = 0x8203;  // 取消注册通知响应
     public const ushort CmdRegisterMultiResp    = 0x8205;  // 批量注册通知响应 = 初始化握手完成 ACK
 
-    // ========== 0x0204 通知事件子类型（payload[0]，官方语义）==========
+    // ========== 0x0204 通知事件子类型（payload[0] 分发键）==========
     public const byte EvtBattery       = 0x01;  // 电池信息 List<BatteryInfo>
     public const byte EvtEarBudsStatus = 0x02;  // 佩戴/入耳状态 List<StatusInfo>
     public const byte EvtNoiseMode     = 0x03;  // 降噪模式变更（次字节区分旧/新/智能）
@@ -173,69 +169,6 @@ public static class OppoProtocol
         EvtOneshot       => "Oneshot",
         EvtToneChange    => "耳音调",
         _                => "未知(0x" + subType.ToString("X2") + ")"
-    };
-
-    // ========== 功能开关 featureType（命令 0x0403 + [featureType][status]）==========
-    // 权威来源：melody 逆向 LD8/w.accept 的 refreshSwitch 分发表（featureType → setXxxStatus）。
-    // 全部经 0x0403 通用功能开关命令承载，status 0=关 1=开。
-    public const byte FeatureWearDetection    = 0x04;  // setWearDetectionStatus 佩戴检测
-    public const byte FeatureGameLL           = 0x06;  // setGameModeStatus 游戏模式（旧/低延迟）
-    public const byte FeatureVocalEnhance     = 0x09;  // setVocalEnhanceStatus 人声增强
-    public const byte FeatureHearingEnhance   = 0x0B;  // setHearingEnhanceUsageStatus 听力增强使用
-    public const byte FeaturePersonalNoise    = 0x0C;  // setPersonalNoiseStatus 个性化降噪
-    public const byte FeatureClickTakePhoto   = 0x0D;  // setClickToTakePhotoStatus 一键拍照
-    public const byte FeatureZenMode          = 0x0F;  // setZenModeStatus 禅模式
-    public const byte FeatureDualDevice       = 0x11;  // setMultiConnectStatus 双设备/多连接开关
-    public const byte FeatureSoundRecord      = 0x13;  // setHeadsetSoundRecordStatus 耳机录音
-    public const byte FeatureVoiceAssist      = 0x14;  // setVoiceAssistStatus 语音助手
-    public const byte FeatureFreeDialog       = 0x15;  // setFreeDialogStatus 畅听对话
-    public const byte FeatureSafeRemind       = 0x16;  // setSafeRemindStatus 安全提醒
-    public const byte FeatureLongPowerMode    = 0x17;  // setLongPowerModeStatus 长续航模式
-    public const byte FeatureHiQualityAudio   = 0x18;  // setHiQualityAudioStatus 高品质音频
-    public const byte FeatureVoiceCommand     = 0x19;  // setVoiceCommandStatus 语音指令
-    public const byte FeatureSpatial          = 0x1B;  // setSpatialSoundStatus 空间音效开关
-    public const byte FeatureAutoVolume       = 0x1C;  // setAutoVolumeStatus 自适应音量
-    public const byte FeatureBassEngine       = 0x1D;  // setBassEngineStatus 低音引擎
-    public const byte FeatureSaveLog          = 0x1E;  // setSaveLogStatus 日志采集
-    public const byte FeatureGameEqualizer    = 0x21;  // setGameEqualizerStatus 游戏均衡器
-    public const byte FeatureSpineLiveMonitor = 0x22;  // setSpineLiveMonitorStatus 脊柱实时监测
-    public const byte FeatureSpineCervical    = 0x23;  // setSpineCervicalStatus 颈椎监测
-    public const byte FeatureSpineExercise    = 0x24;  // setSpineExerciseStatus 脊柱运动
-    public const byte FeatureGameSound        = 0x27;  // setGameSoundStatus 游戏音效开关状态（回读）
-    public const byte FeatureGameMain         = 0x28;  // setGameModeMainStatus 游戏模式主开关
-    public const byte FeatureAdaptiveVolume   = 0x30;  // setAdaptiveVolume 自适应音量(新)
-    public const byte FeatureAdaptiveEar      = 0x31;  // setAdaptiveEar 自适应入耳
-    public const byte FeatureSpeechPerception = 0x32;  // setSpeechPerception 人声感知
-    public const byte FeatureMicControl       = 0x34;  // setMicControl 麦克风控制
-    public const byte FeatureLongPressVolume  = 0x35;  // setLongPressVolume 长按调音量
-    public const byte FeatureSwiftPair        = 0x37;  // setSwiftPair 快速配对
-    public const byte FeatureHearingOptimize  = 0x38;  // setHearingOptimizeStatus 听力优化
-    public const byte FeatureIncomingCallCtrl = 0x39;  // setVoiceIncomingCallControlStatus 来电语音控制
-    public const byte FeatureSleepDetection   = 0x3A;  // setSleepDetection 睡眠检测
-    public const byte FeatureHeadMotion       = 0x3B;  // setHeadMotion 头部动作
-
-    // ========== ANC 模式字节编码 ==========
-    public static readonly byte[] AncOff         = { 0x01, 0x01, 0x01 };
-    public static readonly byte[] AncSmart       = { 0x01, 0x01, 0x80 };
-    public static readonly byte[] AncLight       = { 0x01, 0x01, 0x40 };
-    public static readonly byte[] AncMedium      = { 0x01, 0x01, 0x20 };
-    public static readonly byte[] AncDeep        = { 0x01, 0x01, 0x10 };
-    public static readonly byte[] AncAdaptive    = { 0x01, 0x01, 0x00, 0x08 };
-    public static readonly byte[] AncTransparency = { 0x01, 0x01, 0x04 };
-
-    /// <summary>ANC 响应字节到模式名的反向查找（静态回退表）。按型号的动态映射见 DeviceCapabilities.AncIndexToName</summary>
-    public static readonly Dictionary<(byte, byte), string> AncValues = new()
-    {
-        [(8, 0)]   = "Off",
-        [(2, 0)]   = "Smart",
-        [(0x80, 0)] = "Smart",
-        [(0x40, 0)] = "Light",
-        [(0x20, 0)] = "Medium",
-        [(0x10, 0)] = "Deep",
-        [(0, 1)]   = "Transparency",
-        [(0, 2)]   = "Transparency",
-        [(4, 0)]   = "Transparency",
-        [(0, 8)]   = "Adaptive",
     };
 
     // ========== 空间音频模式（cmd 0x0422）==========
@@ -289,44 +222,7 @@ public static class OppoProtocol
     /// <summary>设备名称匹配的品牌关键词</summary>
     public static readonly string[] SupportedBrands = { "OPPO", "OnePlus", "realme" };
 
-    /// <summary>旧版 ANC 值交换：部分无子模式的设备 NC ↔ Transparency 对调</summary>
-    public static string LegacyAncSwap(string mode) => mode switch
-    {
-        "Smart" or "Light" or "Medium" or "Deep" => "Transparency",
-        "Transparency" => "Smart",
-        _ => mode
-    };
-
-    /// <summary>按 protocolIndex 生成 ANC 设置帧（新版协议：位图 type=1，bit=protocolIndex）。</summary>
-    public static byte[] PktAncByIndex(byte protocolIndex)
-    {
-        // payload = [flag 0x01][type 0x01=位图][bitmap...]，第 protocolIndex 位置 1
-        int byteCount = (protocolIndex / 8) + 1;
-        var payload = new byte[2 + byteCount];
-        payload[0] = 0x01;
-        payload[1] = 0x01;
-        // bit = 2^(protocolIndex % 8)，避免使用位移运算符
-        int bitPos = protocolIndex % 8;
-        int bitVal = 1;
-        for (int k = 0; k < bitPos; k++) bitVal *= 2;
-        payload[2 + (protocolIndex / 8)] = (byte)bitVal;
-        return BuildPacket(CmdAnc, payload);
-    }
-
-    /// <summary>根据 ANC 模式名生成设置帧</summary>
-    public static byte[] PktAncMode(string mode) => mode switch
-    {
-        "Off"           => BuildPacket(CmdAnc, AncOff),
-        "Smart"         => BuildPacket(CmdAnc, AncSmart),
-        "Light"         => BuildPacket(CmdAnc, AncLight),
-        "Medium"        => BuildPacket(CmdAnc, AncMedium),
-        "Deep"          => BuildPacket(CmdAnc, AncDeep),
-        "Adaptive"      => BuildPacket(CmdAnc, AncAdaptive),
-        "Transparency"  => BuildPacket(CmdAnc, AncTransparency),
-        _ => PktBattery
-    };
-
-    /// <summary>根据空间音频模式名生成设置帧</summary>
+    /// <summary>根据空间音频模式名生成设置帧。</summary>
     public static byte[] PktSpatialAudio(string mode) => mode switch
     {
         "Fixed"  => BuildPacket(CmdSpatialAudio, SpatialFixed),
@@ -337,7 +233,7 @@ public static class OppoProtocol
     // ===== 载荷构造（供传输层 Send(cmd, payload)；帧封装交给 IFrameCodec）=====
     public static readonly byte[] PayEmpty = { };
     public static readonly byte[] PayQueryAnc = { 0x01, 0x01 };
-    /// <summary>查询智能切换实时档位（官方 PollCommandManager.q：0x10C + [0x04,0x01]，响应 subType=4=IntelligentNoiseModeInfo）。</summary>
+    /// <summary>查询智能切换实时档位（0x10C + [0x04,0x01]，响应 subType=4=IntelligentNoiseModeInfo）。</summary>
     public static readonly byte[] PayQueryAncIntelligent = { 0x04, 0x01 };
     public static readonly byte[] PayRegisterNotify = { 0x01, 0x01, 0x02, 0x02 };
     public static readonly byte[] PayRegisterWear = { 0x02, 0x02 };
@@ -348,53 +244,13 @@ public static class OppoProtocol
         return new byte[] { feature, (byte)(on ? 0x01 : 0x00) };
     }
 
-    public static byte[] AncPayloadByIndex(byte protocolIndex)
+    /// <summary>空间音频 mode 名 → 载荷字节。</summary>
+    public static byte[] SpatialPayload(string mode) => mode switch
     {
-        int byteCount = (protocolIndex / 8) + 1;
-        var payload = new byte[2 + byteCount];
-        payload[0] = 0x01;
-        payload[1] = 0x01;
-        int bitPos = protocolIndex % 8;
-        int bitVal = 1;
-        for (int k = 0; k < bitPos; k++) bitVal *= 2;
-        payload[2 + (protocolIndex / 8)] = (byte)bitVal;
-        return payload;
-    }
-
-    public static byte[] AncPayloadByName(string mode)
-    {
-        switch (mode)
-        {
-            case "Off": return AncOff;
-            case "Smart": return AncSmart;
-            case "Light": return AncLight;
-            case "Medium": return AncMedium;
-            case "Deep": return AncDeep;
-            case "Adaptive": return AncAdaptive;
-            case "Transparency": return AncTransparency;
-            default: return AncOff;
-        }
-    }
-
-    public static byte[] SpatialPayload(string mode)
-    {
-        switch (mode)
-        {
-            case "Fixed": return SpatialFixed;
-            case "Track": return SpatialTrack;
-            default: return SpatialOff;
-        }
-    }
-
-    public static byte[] OperateHandheldPayload(string targetAddress, bool connect)
-    {
-        var parts = targetAddress.Split(':');
-        var payload = new byte[1 + parts.Length];
-        payload[0] = (byte)(connect ? 0x01 : 0x00);
-        for (int i = 0; i < parts.Length; i++)
-            payload[1 + i] = Convert.ToByte(parts[i], 16);
-        return payload;
-    }
+        "Fixed" => SpatialFixed,
+        "Track" => SpatialTrack,
+        _ => SpatialOff,
+    };
 
     /// <summary>设置编解码器（cmd 0x040E）：[codec(1)]。</summary>
     public static byte[] CodecPayload(byte codec) => new[] { codec };
@@ -418,7 +274,7 @@ public static class OppoProtocol
 
     /// <summary>
     /// 解析远程固件版本响应（0x8105）：[status(1)][n(1)][UTF-8 CSV]。
-    /// 官方 CommandUtil.k 按逗号分割、每 3 字段为一条 VersionInfo；这里返回原始版本串。
+    /// CommandUtil.k 按逗号分割、每 3 字段为一条 VersionInfo；这里返回原始版本串。
     /// </summary>
     public static string? ParseVersion(byte[] payload)
     {
@@ -442,10 +298,9 @@ public static class OppoProtocol
     }
 
     /// <summary>
-    /// 解析空间音频三模式查询响应（0x812A，官方 getHeadsetSpatialType）。
+    /// 解析空间音频三模式查询响应（0x812A，getHeadsetSpatialType）。
     /// 格式：[status(1)][spatialType(1)]，status!=0 或长度不足视为无效（返回 -1）。
-    /// 对齐官方 PollCommandManager.D 的 0x812a 分支：状态非 0 报错、长度<=1 视为无效、
-    /// 否则取 data[1] 作为 spatialType，经 MSG_RECEIVE_HEADSET_SPATIAL_TYPE_EVENT 上抛。
+    /// 状态非 0 报错、长度<=1 视为无效、否则取 data[1] 作为 spatialType。
     /// spatialType：0=Off 1=Fixed 2=Track（与 0x0422 SET 载荷编码一致）。
     /// </summary>
     public static int ParseHeadsetSpatialType(byte[] payload)
