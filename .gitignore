@@ -11,6 +11,7 @@ Network/
 *.userosscache
 *.sln.docstates
 *.userprefs
+.vscode/
 
 ## OS
 .DS_Store
