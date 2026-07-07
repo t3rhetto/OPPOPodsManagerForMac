@@ -2700,7 +2700,7 @@ public partial class MainWindow : SukiWindow
     }
 }
 
-/// <summary>捕获 Debug.WriteLine 输出，转发到 MainWindow 的 UI 日志面板。</summary>
+/// <summary>捕获 Trace.WriteLine 输出（含 Log.D/Ex/Result），转发到 MainWindow 的 UI 日志面板。</summary>
 internal sealed class LogTraceListener : TraceListener
 {
     private readonly WeakReference<MainWindow> _window;
