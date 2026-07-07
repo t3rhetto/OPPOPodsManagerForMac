@@ -1194,7 +1194,7 @@ public partial class MainWindow : SukiWindow
         var ok = await _confirmTcs.Task;
         if (!ok) return;
 
-        ExportFeedback("https://github.com/Zhaoyi-ya/OPPO-Pods-For-Windows/issues/new");
+        ExportFeedback("https://github.com/Zhaoyi-ya/OppoPodsManager/issues/new");
     }
 
     private void ExportFeedback(string url)
@@ -2294,7 +2294,8 @@ public partial class MainWindow : SukiWindow
     // ===== 版本更新检查 =====
 
     private const string UPDATE_API = "https://oppopods.zhaoyi.fun/api/update/latest";
-    private const string DOWNLOAD_URL = "https://github.com/Zhaoyi-ya/OPPO-Pods-For-Windows/releases/latest";
+    // private const string UPDATE_API = "http://localhost:57824/api/update/latest";
+    private const string DOWNLOAD_URL = "https://github.com/Zhaoyi-ya/OppoPodsManager/releases/latest";
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(5) };
 
     private async void BtnCheckUpdate_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
@@ -2609,6 +2610,8 @@ public partial class MainWindow : SukiWindow
             using var doc = System.Text.Json.JsonDocument.Parse(resp);
             var json = doc.RootElement;
             var serverVersion = json.GetProperty("version").GetString();
+            var content = json.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "";
+            var downloadUrl = json.TryGetProperty("download_url", out var u) ? u.GetString() ?? DOWNLOAD_URL : DOWNLOAD_URL;
 
             if (string.IsNullOrEmpty(serverVersion) || !IsNewerThan(serverVersion, VersionText.Text!))
             {
@@ -2625,9 +2628,9 @@ public partial class MainWindow : SukiWindow
             }
 
             var go = await Dispatcher.UIThread.InvokeAsync(async () =>
-                await ShowUpdateDialog(serverVersion));
+                await ShowUpdateDialog(serverVersion, content));
             if (go)
-                Process.Start(new ProcessStartInfo(DOWNLOAD_URL) { UseShellExecute = true });
+                Process.Start(new ProcessStartInfo(downloadUrl) { UseShellExecute = true });
         }
         catch
         {
@@ -2669,13 +2672,16 @@ public partial class MainWindow : SukiWindow
         return string.Compare(sv, lv, StringComparison.Ordinal) > 0;
     }
 
-    private async Task<bool> ShowUpdateDialog(string newVersion)
+    private async Task<bool> ShowUpdateDialog(string newVersion, string content = "")
     {
         _confirmTcs = new TaskCompletionSource<bool>();
         _promptTcs = null;
 
         DialogTitle.Text = "发现新版本";
-        DialogMessage.Text = $"新版本 {newVersion} 已发布，当前版本 {VersionText.Text}，是否前往下载？";
+        if (string.IsNullOrEmpty(content))
+            DialogMessage.Text = $"新版本 {newVersion} 已发布，当前版本 {VersionText.Text}，是否前往下载？";
+        else
+            DialogMessage.Text = $"v{newVersion} 已发布\n当前版本：{VersionText.Text}\n\n{content}";
         DialogInput.IsVisible = false;
         DialogCancelBtn.Content = "下次提醒我";
         DialogCancelBtn.Background = Brushes.Transparent;
@@ -2688,7 +2694,6 @@ public partial class MainWindow : SukiWindow
         DialogConfirmBtn.IsVisible = true;
         DialogOverlay.IsVisible = true;
 
-        // 记住版本号供跳过按钮使用
         _updatePendingVersion = newVersion;
 
         return await _confirmTcs.Task;
