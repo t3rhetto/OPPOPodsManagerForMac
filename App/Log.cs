@@ -33,6 +33,7 @@ public static class Log
 
     private static void Write(string line)
     {
+        System.Diagnostics.Trace.WriteLine(line);
         Console.Error.WriteLine(line);
         try
         {
