@@ -294,6 +294,10 @@ public static partial class OppoProtocol
     /// <summary>解析编解码器类型响应（0x8114）：[status(1)][n(1)][id,val]×n，返回首个 codec id。</summary>
     public static int ParseCodecType(byte[] payload)
     {
+        // SPP 短格式: [status(1), codecType(1)]
+        if (payload != null && payload.Length >= 2 && payload[0] == 0)
+            return payload[1];
+        // GATT 长格式: [status(1), count(1), id(1), val(1), ...]
         if (payload == null || payload.Length < 3 || payload[0] != 0) return -1;
         int n = payload[1];
         if (n <= 0 || payload.Length < 2 + 2) return -1;

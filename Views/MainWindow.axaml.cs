@@ -1764,7 +1764,7 @@ public partial class MainWindow : SukiWindow
         5 => "aptX",
         6 => "aptX HD",
         7 => "aptX Adaptive",
-        8 => "SSC (Samsung)",
+        8 => "LHDC",
         -1 => "-",
         _ => $"未知 ({id})"
     };

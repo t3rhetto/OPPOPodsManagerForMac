@@ -1,4 +1,4 @@
-# OPPO Pods For Windows
+# OPPO Pods Manager (Windows / Linux)
 
 [中文](https://github.com/Zhaoyi-ya/OppoPodsManager/blob/main/README.md) | [English](https://github.com/Zhaoyi-ya/OppoPodsManager/blob/main/README_EN.md)
 

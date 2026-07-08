@@ -14,7 +14,7 @@ public static class SettingsManager
 {
     private static readonly string FilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "OppoPodsWin", "settings.json");
+        "OppoPodsManager", "settings.json");
 
     private static Dictionary<string, string> _cache = new();
     private static DateTime _lastRead = DateTime.MinValue;
