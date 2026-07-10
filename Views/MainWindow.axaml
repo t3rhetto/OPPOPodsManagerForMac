@@ -7,6 +7,8 @@
      MinWidth="890" MinHeight="640"
      WindowStartupLocation="CenterScreen"
      CanMinimize="True" CanMaximize="True" CanPin="False" CanFullScreen="False"
+     ExtendClientAreaToDecorationsHint="True"
+     UseLayoutRounding="True"
      BackgroundStyle="Bubble">
 
  <suki:SukiWindow.Styles>
@@ -26,6 +28,7 @@
   <Style Selector="Button.SidebarNav.selected">
    <Setter Property="Background" Value="{DynamicResource SidebarSelectedBg}"/>
    <Setter Property="CornerRadius" Value="8"/>
+   <Setter Property="Foreground" Value="{DynamicResource SukiPrimaryColor}"/>
   </Style>
   <!-- 标题栏关闭按钮悬停红色 -->
   <Style Selector="suki|SukiWindow /template/ Button#PART_CloseButton:pointerover">
@@ -36,24 +39,90 @@
     <Style Selector="Border.glassCard">
       <Setter Property="Background" Value="{DynamicResource GlassCardBg}"/>
       <Setter Property="CornerRadius" Value="14"/>
-      <Setter Property="BoxShadow" Value="0 1 4 0 #14000000"/>
+      <Setter Property="BoxShadow" Value="0 0 0 0 #00000000"/>
+    </Style>
+    <!-- 背景缩略图 -->
+    <Style Selector="Border.bgThumb">
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="2"/>
+    </Style>
+    <Style Selector="Border.bgThumb:pointerover">
+      <Setter Property="BorderBrush" Value="#4488FF"/>
+      <Setter Property="Opacity" Value="0.9"/>
+    </Style>
+    <Style Selector="Border.bgThumb.selected">
+      <Setter Property="BorderBrush" Value="#6C8CFF"/>
+    </Style>
+    <!-- 添加背景按钮（虚线） -->
+    <Style Selector="Border.bgThumbAdd">
+      <Setter Property="BorderBrush" Value="{DynamicResource SukiText}"/>
+      <Setter Property="BorderThickness" Value="1.5"/>
+      <Setter Property="Opacity" Value="0.35"/>
+    </Style>
+    <Style Selector="Border.bgThumbAdd:pointerover">
+      <Setter Property="Opacity" Value="0.65"/>
     </Style>
  </suki:SukiWindow.Styles>
 
- <Grid ColumnDefinitions="200,*">
+ <Panel x:Name="RootPanel">
+  <Image x:Name="BgFullImage" Stretch="UniformToFill" Opacity="0.85" IsVisible="False"/>
+  <!-- 全高侧边栏背景板 -->
+  <Border x:Name="SidebarFullBg" Width="200" IsVisible="False"
+      HorizontalAlignment="Left" VerticalAlignment="Stretch"
+      Background="{DynamicResource GlassCardBg}"/>
+  <!-- 自定义标题栏 -->
+  <Border x:Name="CustomTitleBar" Height="32" IsVisible="False"
+      Background="Transparent" VerticalAlignment="Top" HorizontalAlignment="Stretch"
+      PointerPressed="TitleBarDrag_PointerPressed">
+   <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+       Margin="0,0,6,0" VerticalAlignment="Center" Spacing="4">
+    <Button Width="24" Height="18" Padding="0" Margin="0" Background="Transparent"
+        Foreground="{DynamicResource SukiText}" BorderThickness="0"
+        Click="CustomMin_Click" Cursor="Hand">
+     <Path Data="M2,6 L10,6" Stroke="{DynamicResource SukiText}" StrokeThickness="1.2"
+         HorizontalAlignment="Center" VerticalAlignment="Center" Width="12" Height="10"/>
+    </Button>
+    <Button Width="24" Height="18" Padding="0" Margin="2,0,2,0" Background="Transparent"
+        Foreground="{DynamicResource SukiText}" BorderThickness="0"
+        Click="CustomMax_Click" Cursor="Hand">
+     <Path Data="M2,2 L8,2 Q9,2 9,3 L9,9 Q9,10 8,10 L2,10 Q1,10 1,9 L1,3 Q1,2 2,2 Z"
+         Stroke="{DynamicResource SukiText}" StrokeThickness="1.2"
+         Fill="Transparent" HorizontalAlignment="Center" VerticalAlignment="Center" Width="10" Height="10"/>
+    </Button>
+    <Button Width="24" Height="18" Padding="0" Background="Transparent"
+        Foreground="{DynamicResource SukiText}" BorderThickness="0"
+        Click="CustomClose_Click" Cursor="Hand">
+     <Path Data="M1.5,2 L9,9.5 M9,2 L1.5,9.5" Stroke="{DynamicResource SukiText}" StrokeThickness="1.2"
+         HorizontalAlignment="Center" VerticalAlignment="Center" Width="10" Height="10"/>
+    </Button>
+   </StackPanel>
+  </Border>
+  <Grid x:Name="RootGrid" ColumnDefinitions="200,*">
   <!-- ========== 侧边栏 ========== -->
-  <Border x:Name="SidebarBorder" Grid.Column="0">
+  <Border x:Name="SidebarBorder" Grid.Column="0" VerticalAlignment="Stretch">
    <Grid RowDefinitions="Auto,*,Auto">
-    <StackPanel Margin="16,12,12,0" Spacing="4">
+    <StackPanel Grid.Row="0" Margin="16,8,12,4" Spacing="4">
      <TextBlock Text="已连接设备" FontSize="11" Opacity="0.4"
         Margin="14,0,0,2" Foreground="{DynamicResource SukiText}"/>
-     <ItemsControl x:Name="DeviceList" Margin="0,0,0,4"/>
+     <ScrollViewer MaxHeight="190" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <ItemsControl x:Name="DeviceList" Margin="0,0,0,4">
+       <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+         <StackPanel Orientation="Vertical" Spacing="2"/>
+        </ItemsPanelTemplate>
+       </ItemsControl.ItemsPanel>
+      </ItemsControl>
+     </ScrollViewer>
+    </StackPanel>
+    <StackPanel Grid.Row="1" Margin="16,0,12,0" Spacing="4" VerticalAlignment="Top">
      <Button x:Name="NavHome" Content="首页" Height="38" FontSize="14"
        Click="NavHome_Click" Classes="SidebarNav"/>
      <Button x:Name="NavEq" Content="音效调节" Height="38" FontSize="14"
        Click="NavEq_Click" Classes="SidebarNav"/>
      <Button x:Name="NavDeviceInfo" Content="设备详情" Height="38" FontSize="14"
        Click="NavDeviceInfo_Click" Classes="SidebarNav"/>
+     <Button x:Name="NavPersonal" Content="个性化" Height="38" FontSize="14"
+       Click="NavPersonal_Click" Classes="SidebarNav"/>
     </StackPanel>
     <Button Grid.Row="2" x:Name="NavSettings" Content="设置" Height="34" FontSize="13"
       Click="NavSettings_Click" Margin="16,0,12,14"
@@ -66,29 +135,21 @@
    <ScrollViewer x:Name="MainPanel" Padding="16,12,16,16" VerticalScrollBarVisibility="Hidden">
     <StackPanel Spacing="14">
      <Border Padding="14,10" 
-       CornerRadius="14" BoxShadow="0 1 4 0 #14000000" Classes="glassCard"
+       CornerRadius="14" BoxShadow="0 0 0 0 #00000000" Classes="glassCard"
        >
-      <Grid ColumnDefinitions="Auto,*,Auto,Auto" MinHeight="28">
+      <Grid ColumnDefinitions="Auto,*,Auto" MinHeight="28">
        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
         <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="#FF5555" Margin="0,0,6,0"/>
         <TextBlock x:Name="StatusText" Text="未连接" FontSize="13" Foreground="#FF8888"
            VerticalAlignment="Center"/>
        </StackPanel>
-       <!-- 多耳机选择器：发现多副已配对耳机时显示，切换即断开当前并连接选中设备 -->
-       <ComboBox x:Name="CbDevice" Grid.Column="1" Height="26" FontSize="11"
-         MinWidth="140" MaxWidth="220" HorizontalAlignment="Right" Margin="8,0,8,0"
-         IsVisible="False" VerticalAlignment="Center"
-         ToolTip.Tip="切换要连接的耳机"/>
-       <Button x:Name="BtnRefreshDevices" Grid.Column="2" Content="⟳" Height="26" Width="26" FontSize="13"
-         Click="RefreshDevices_Click" Padding="0" IsVisible="False" Margin="0,0,8,0"
-         ToolTip.Tip="重新扫描已配对耳机"/>
-       <Button x:Name="BtnReconnect" Grid.Column="3" Content="重新连接" Height="26" FontSize="11"
+       <Button x:Name="BtnReconnect" Grid.Column="2" Content="重新连接" Height="26" FontSize="11"
          Click="Reconnect_Click" Padding="10,0" IsVisible="False"/>
       </Grid>
      </Border>
 
      <Border Padding="16,14" 
-       CornerRadius="14" BoxShadow="0 1 4 0 #14000000" Classes="glassCard"
+       CornerRadius="14" BoxShadow="0 0 0 0 #00000000" Classes="glassCard"
        >
       <StackPanel>
        <TextBlock Text="电量" FontSize="14" FontWeight="Medium" Margin="0,0,0,6"
@@ -139,7 +200,7 @@
      <!-- ANC + 功能 并排 -->
      <Grid ColumnDefinitions="*,*">
       <Border x:Name="AncPanel" Padding="16,14" Grid.Column="0" Margin="0,0,7,0"
-        CornerRadius="14" BoxShadow="0 1 4 0 #14000000" Classes="glassCard">
+        CornerRadius="14" BoxShadow="0 0 0 0 #00000000" Classes="glassCard">
        <StackPanel Spacing="8">
         <TextBlock Text="降噪控制" FontSize="14" FontWeight="Medium"
            HorizontalAlignment="Center" Foreground="{DynamicResource SukiText}"/>
@@ -153,14 +214,13 @@
       </Border>
 
       <Border Padding="16,14" Grid.Column="1" Margin="7,0,0,0"
-        CornerRadius="14" BoxShadow="0 1 4 0 #14000000" Classes="glassCard"
+        CornerRadius="14" BoxShadow="0 0 0 0 #00000000" Classes="glassCard"
         >
        <StackPanel>
         <TextBlock Text="功能" FontSize="14" FontWeight="Medium" Margin="0,0,0,6"
            HorizontalAlignment="Center" Foreground="{DynamicResource SukiText}"/>
         <StackPanel Spacing="0" HorizontalAlignment="Center">
           <CheckBox x:Name="CbDualDevice" Content="双设备连接" Margin="0,3"/>
-          <CheckBox x:Name="CbGame" Content="游戏模式" Margin="0,3"/>
         </StackPanel>
        </StackPanel>
       </Border>
@@ -175,20 +235,15 @@
        VerticalScrollBarVisibility="Hidden" IsVisible="False">
     <StackPanel Spacing="14">
      <Border Padding="22,20"
-       CornerRadius="14" BoxShadow="0 1 4 0 #14000000" Classes="glassCard"
+       CornerRadius="14" BoxShadow="0 0 0 0 #00000000" Classes="glassCard"
        >
       <StackPanel>
        <TextBlock Text="设置" FontSize="15" FontWeight="Medium" Margin="0,0,0,16"
           HorizontalAlignment="Center" Foreground="{DynamicResource SukiText}"/>
 
        <Grid ColumnDefinitions="*,*">
-        <!-- ====== 左列 ====== -->
+        <!-- ====== 左列：高级设置 ====== -->
         <StackPanel Grid.Column="0" Margin="0,0,10,0" Spacing="6">
-         <TextBlock Text="自定义设备名称" FontSize="12"
-            Foreground="{DynamicResource SukiText}" Opacity="0.7"/>
-         <TextBox x:Name="TbCustomName" Height="28" Padding="8,4" Margin="0,0,0,10"
-            HorizontalContentAlignment="Center" HorizontalAlignment="Stretch"/>
-
          <TextBlock Text="设备型号" FontSize="12"
             Foreground="{DynamicResource SukiText}" Opacity="0.7"/>
          <ComboBox x:Name="CbBrand" Height="28" Padding="8,0" HorizontalAlignment="Stretch"/>
@@ -204,50 +259,20 @@
          </ComboBox>
         </StackPanel>
 
-        <!-- ====== 右列 ====== -->
+        <!-- ====== 右列：工具 ====== -->
         <StackPanel Grid.Column="1" Margin="10,0,0,0" Spacing="6">
-         <TextBlock Text="主题" FontSize="12"
-            Foreground="{DynamicResource SukiText}" Opacity="0.7"/>
-         <ComboBox x:Name="CbTheme" Height="28" Padding="8,0" Margin="0,0,0,10" HorizontalAlignment="Stretch">
-          <ComboBoxItem Content="跟随系统"/><ComboBoxItem Content="深色"/><ComboBoxItem Content="浅色"/>
-         </ComboBox>
+         <CheckBox x:Name="CbAuto" Content="开机自启" Margin="0,0,0,2"/>
+         <CheckBox x:Name="CbTray" Content="关闭到托盘" Margin="0,0,0,2"/>
+         <CheckBox x:Name="CbAutoUpdate" Content="自动检查更新" Margin="0,0,0,10"/>
 
-         <CheckBox x:Name="CbAutoUpdate" Content="自动检查更新" Margin="0,0,0,2"/>
          <Button x:Name="BtnCheckUpdate" Content="检查更新" Height="32" FontSize="11"
-             Padding="12,0" VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
              Click="BtnCheckUpdate_Click" HorizontalAlignment="Stretch" Margin="0,0,0,4"/>
-
          <Button x:Name="BtnFeedback" Content="提交反馈" Height="32" FontSize="11"
-             Padding="12,0" VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
              Click="BtnFeedback_Click" HorizontalAlignment="Stretch" Margin="0,0,0,4"/>
          <Button x:Name="BtnViewLog" Content="查看日志" Height="32" FontSize="11"
-             Padding="12,0" VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
-             Click="BtnViewLog_Click" HorizontalAlignment="Stretch" Margin="0,0,0,10"/>
-
-         <CheckBox x:Name="CbTray" Content="关闭到托盘"/>
-         <CheckBox x:Name="CbAuto" Content="开机自启"/>
-
-         <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
-          <TextBlock Text="弹窗时长" FontSize="12" VerticalAlignment="Center"
-             Foreground="{DynamicResource SukiText}" Opacity="0.7"/>
-          <ComboBox x:Name="CbToastDuration" Height="26" Padding="6,0" Width="120" HorizontalAlignment="Left">
-           <ComboBoxItem Content="3s"/>
-           <ComboBoxItem Content="4s"/>
-           <ComboBoxItem Content="默认"/>
-           <ComboBoxItem Content="6s"/>
-           <ComboBoxItem Content="7s"/>
-           <ComboBoxItem Content="8s"/>
-          </ComboBox>
-         </StackPanel>
-
-         <Button x:Name="BtnTestBattery" Content="测试电量弹窗" Height="30" FontSize="11"
-             Click="BtnTestBattery_Click" HorizontalAlignment="Stretch" Margin="0,6,0,2"/>
-         <Button x:Name="BtnTestToast" Content="测试弹窗" Height="30" FontSize="11"
-             Click="BtnTestToast_Click" HorizontalAlignment="Stretch" Margin="0,2,0,6"/>
-
-         <Button Content="关于 OPPO Pods For Windows" FontSize="11" Opacity="0.5"
-           Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch"
-           Click="About_Click" Margin="0,8,0,0"/>
+             Click="BtnViewLog_Click" HorizontalAlignment="Stretch" Margin="0,0,0,4"/>
+         <Button Content="关于" Height="32" FontSize="11"
+             Click="About_Click" HorizontalAlignment="Stretch" Margin="0,0,0,4"/>
         </StackPanel>
        </Grid>
       </StackPanel>
@@ -271,7 +296,7 @@
      </StackPanel>
      <!-- 日志列表卡片（固定大小，内容滚动） -->
      <Border Grid.Row="1" Padding="12,10"
-       CornerRadius="10" BoxShadow="0 1 4 0 #14000000" Classes="glassCard">
+       CornerRadius="10" BoxShadow="0 0 0 0 #00000000" Classes="glassCard">
       <ListBox x:Name="LbLog" BorderThickness="0" Background="Transparent"
            FontSize="13">
        <ListBox.ItemTemplate>
@@ -289,35 +314,35 @@
        VerticalScrollBarVisibility="Hidden" IsVisible="False">
     <StackPanel Spacing="14">
      <Border Padding="22,20" 
-       CornerRadius="14" BoxShadow="0 1 4 0 #14000000" Classes="glassCard"
+       CornerRadius="14" BoxShadow="0 0 0 0 #00000000" Classes="glassCard"
        >
       <StackPanel>
-       <Grid Margin="0,0,0,14">
-        <Button Content="⟵" FontSize="14" Opacity="0.5"
+       <Grid Margin="0,0,0,16">
+        <Button Content="⟵" FontSize="16" Opacity="0.5"
           HorizontalAlignment="Left" Background="Transparent" BorderThickness="0"
           Click="AboutBack_Click" Padding="4,0"/>
-        <TextBlock Text="关于" FontSize="15" FontWeight="Medium"
+        <TextBlock Text="关于" FontSize="18" FontWeight="Medium"
            HorizontalAlignment="Center" VerticalAlignment="Center"
            Foreground="{DynamicResource SukiText}"/>
        </Grid>
-       <TextBlock Text="OPPO Pods For Windows" FontSize="13" HorizontalAlignment="Center" Margin="0,0,0,4"
+       <TextBlock Text="OPPO Pods Manager" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6"
           Foreground="{DynamicResource SukiText}"/>
-       <TextBlock x:Name="VersionText" Text="v1.1.3" FontSize="11" HorizontalAlignment="Center" Opacity="0.4" Margin="0,0,0,14"/>
-       <TextBlock Text="致谢" FontSize="12" FontWeight="Medium" HorizontalAlignment="Center" Margin="0,0,0,6"
+       <TextBlock x:Name="VersionText" Text="v1.1.2" FontSize="14" HorizontalAlignment="Center" Opacity="0.45" Margin="0,0,0,16"/>
+       <TextBlock Text="致谢" FontSize="15" FontWeight="Medium" HorizontalAlignment="Center" Margin="0,0,0,8"
           Foreground="{DynamicResource SukiText}"/>
-       <Button FontSize="10" HorizontalAlignment="Center" Opacity="0.5" Margin="0,0,0,2"
+       <Button FontSize="13" HorizontalAlignment="Center" Opacity="0.6" Margin="0,0,0,3"
          Background="Transparent" BorderThickness="0"
          Click="OpenUrl_Click" Tag="https://github.com/Leaf-lsgtky/OppoPods">Leaf-lsgtky/OppoPods</Button>
-       <Button FontSize="10" HorizontalAlignment="Center" Opacity="0.5" Margin="0,0,0,2"
+       <Button FontSize="13" HorizontalAlignment="Center" Opacity="0.6" Margin="0,0,0,3"
          Background="Transparent" BorderThickness="0"
          Click="OpenUrl_Click" Tag="https://github.com/1812z/OppoPods">1812z/OppoPods</Button>
-       <Button FontSize="10" HorizontalAlignment="Center" Opacity="0.5" Margin="0,0,0,2"
+       <Button FontSize="13" HorizontalAlignment="Center" Opacity="0.6" Margin="0,0,0,3"
          Background="Transparent" BorderThickness="0"
          Click="OpenUrl_Click" Tag="https://github.com/AvaloniaUI/Avalonia">AvaloniaUI/Avalonia</Button>
-       <Button FontSize="10" HorizontalAlignment="Center" Opacity="0.5" Margin="0,0,0,2"
+       <Button FontSize="13" HorizontalAlignment="Center" Opacity="0.6" Margin="0,0,0,3"
          Background="Transparent" BorderThickness="0"
          Click="OpenUrl_Click" Tag="https://github.com/kikipoulet/SukiUI">kikipoulet/SukiUI</Button>
-       <Button FontSize="10" HorizontalAlignment="Center" Opacity="0.5" Margin="0,0,0,14"
+       <Button FontSize="13" HorizontalAlignment="Center" Opacity="0.6" Margin="0,0,0,14"
          Background="Transparent" BorderThickness="0"
          Click="OpenUrl_Click" Tag="https://github.com/Zhaoyi-ya/OppoPodsManager">GitHub</Button>
       </StackPanel>
@@ -325,8 +350,166 @@
     </StackPanel>
    </ScrollViewer>
 
+   <!-- ========== 个性化设置 ========== -->
+   <ScrollViewer x:Name="PersonalPanel" Padding="16,12,16,16"
+       VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+       IsVisible="False">
+    <StackPanel Spacing="14" HorizontalAlignment="Stretch">
+     <TextBlock Text="个性化" FontSize="15" FontWeight="Medium"
+        HorizontalAlignment="Center" Foreground="{DynamicResource SukiText}"/>
+
+     <!-- 外观 -->
+     <Border Padding="18,16"
+       CornerRadius="14" BoxShadow="0 0 0 0 #00000000" Classes="glassCard">
+      <StackPanel Spacing="10">
+       <TextBlock Text="外观" FontSize="13" FontWeight="Medium"
+          Foreground="{DynamicResource SukiText}" Opacity="0.8"/>
+       <StackPanel Orientation="Horizontal" Spacing="12">
+        <TextBlock Text="主题" FontSize="13" VerticalAlignment="Center"
+           Foreground="{DynamicResource SukiText}" Width="80"/>
+        <ComboBox x:Name="CbTheme" Height="28" Padding="8,0" Width="140" HorizontalAlignment="Left">
+         <ComboBoxItem Content="跟随系统"/><ComboBoxItem Content="深色"/><ComboBoxItem Content="浅色"/>
+        </ComboBox>
+       </StackPanel>
+       <StackPanel Orientation="Horizontal" Spacing="12">
+        <TextBlock Text="透明预设" FontSize="13" VerticalAlignment="Center"
+           Foreground="{DynamicResource SukiText}" Width="80"/>
+        <ComboBox x:Name="CbTransparencyPreset" Height="28" Padding="8,0" Width="140" HorizontalAlignment="Left">
+         <ComboBoxItem Content="自定义"/><ComboBoxItem Content="清晰"/>
+         <ComboBoxItem Content="平衡"/><ComboBoxItem Content="通透"/>
+        </ComboBox>
+       </StackPanel>
+       <StackPanel Orientation="Horizontal" Spacing="12">
+        <TextBlock Text="卡片透明" FontSize="13" VerticalAlignment="Center"
+           Foreground="{DynamicResource SukiText}" Width="80"/>
+        <Slider x:Name="SlOpacity" Minimum="0" Maximum="90" Value="50" Width="160"
+            TickFrequency="10" IsSnapToTickEnabled="True"/>
+        <TextBlock x:Name="TbOpacity" Text="50%" FontSize="11" VerticalAlignment="Center"
+           Foreground="{DynamicResource SukiText}" Opacity="0.5" Width="32"/>
+        <Button x:Name="BtnResetOpacity" Width="28" Height="28" Padding="0" Background="Transparent" BorderThickness="0">
+         <Path Data="M3,12A9,9 0,1 0,6.64 4.75M3,4V12H11" Stroke="{DynamicResource SukiText}" StrokeThickness="1.5" Fill="Transparent" Width="14" Height="14" Stretch="Uniform"/>
+        </Button>
+       </StackPanel>
+       <StackPanel Orientation="Horizontal" Spacing="12">
+        <TextBlock Text="弹窗时长" FontSize="13" VerticalAlignment="Center"
+           Foreground="{DynamicResource SukiText}" Width="80"/>
+        <ComboBox x:Name="CbToastDuration" Height="28" Padding="8,0" Width="140" HorizontalAlignment="Left">
+         <ComboBoxItem Content="3s"/>
+         <ComboBoxItem Content="4s"/>
+         <ComboBoxItem Content="5s（默认）"/>
+         <ComboBoxItem Content="6s"/>
+         <ComboBoxItem Content="7s"/>
+         <ComboBoxItem Content="8s"/>
+        </ComboBox>
+       </StackPanel>
+      </StackPanel>
+     </Border>
+
+     <!-- 背景 -->
+     <Border x:Name="BackgroundSettingsCard" Padding="18,16"
+       CornerRadius="14" BoxShadow="0 0 0 0 #00000000" Classes="glassCard">
+      <StackPanel x:Name="BackgroundSettingsContent" Spacing="12">
+       <TextBlock Text="背景" FontSize="13" FontWeight="Medium"
+          Foreground="{DynamicResource SukiText}" Opacity="0.8"/>
+       <Grid ColumnDefinitions="28,*,28">
+        <!-- 左箭头 -->
+        <Button Grid.Column="0" x:Name="BtnBgLeft" Content="‹" FontSize="18"
+            Width="28" Height="28" Padding="0" VerticalAlignment="Center"
+            Background="Transparent" BorderThickness="0"
+            Foreground="{DynamicResource SukiText}" Opacity="0.4"
+            Click="BtnBgLeft_Click"/>
+        <!-- 缩略图列表 -->
+        <ScrollViewer Grid.Column="1" x:Name="BgThumbScroller"
+            HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
+         <StackPanel x:Name="BgThumbList" Orientation="Horizontal" Spacing="10">
+          <!-- 默认背景：白/黑斜线 -->
+          <Border x:Name="BgThumbDefault" Width="90" Height="60" CornerRadius="8"
+              Cursor="Hand" Classes="bgThumb">
+           <Border.Background>
+            <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+             <GradientStop Color="White" Offset="0"/>
+             <GradientStop Color="White" Offset="0.45"/>
+             <GradientStop Color="#222222" Offset="0.45"/>
+             <GradientStop Color="#222222" Offset="1"/>
+            </LinearGradientBrush>
+           </Border.Background>
+          </Border>
+          <!-- 添加新背景 -->
+          <Border x:Name="BgThumbAdd" Width="90" Height="60" CornerRadius="8"
+              Cursor="Hand" BorderThickness="2"
+              Background="Transparent" Opacity="1"
+              BorderBrush="{DynamicResource SukiText}"
+              Classes="bgThumbAdd">
+           <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Opacity="1">
+            <TextBlock Text="+" FontSize="20" HorizontalAlignment="Center"
+               Foreground="{DynamicResource SukiText}"/>
+            <TextBlock Text="添加新背景" FontSize="10" HorizontalAlignment="Center"
+               Foreground="{DynamicResource SukiText}"/>
+           </StackPanel>
+          </Border>
+         </StackPanel>
+        </ScrollViewer>
+        <!-- 右箭头 -->
+        <Button Grid.Column="2" x:Name="BtnBgRight" Content="›" FontSize="18"
+            Width="28" Height="28" Padding="0" VerticalAlignment="Center"
+            Background="Transparent" BorderThickness="0"
+            Foreground="{DynamicResource SukiText}" Opacity="0.4"
+            Click="BtnBgRight_Click"/>
+       </Grid>
+       <StackPanel Orientation="Horizontal" Spacing="12">
+        <TextBlock Text="背景模糊" FontSize="13" VerticalAlignment="Center"
+           Foreground="{DynamicResource SukiText}" Width="80"/>
+        <Slider x:Name="SlBgBlur" Minimum="0" Maximum="20" Value="0" Width="160"
+            TickFrequency="5" IsSnapToTickEnabled="True"/>
+        <TextBlock x:Name="TbBgBlur" Text="0" FontSize="11" VerticalAlignment="Center"
+           Foreground="{DynamicResource SukiText}" Opacity="0.5" Width="32"/>
+        <Button x:Name="BtnResetBgBlur" Content="重置" Height="28" FontSize="11" Padding="12,0"/>
+       </StackPanel>
+      </StackPanel>
+     </Border>
+
+     <!-- 设备 -->
+     <Border Padding="18,16"
+       CornerRadius="14" BoxShadow="0 0 0 0 #00000000" Classes="glassCard">
+      <StackPanel Spacing="10">
+       <TextBlock Text="设备" FontSize="13" FontWeight="Medium"
+          Foreground="{DynamicResource SukiText}" Opacity="0.8"/>
+       <TextBlock Text="自定义设备名称" FontSize="12"
+          Foreground="{DynamicResource SukiText}" Opacity="0.6"/>
+       <TextBox x:Name="TbCustomName" Height="30" Padding="8,4"
+          HorizontalContentAlignment="Center"/>
+      </StackPanel>
+     </Border>
+
+     <!-- 高级自定义设置 (Beta) -->
+     <Border Padding="18,16" HorizontalAlignment="Stretch"
+       CornerRadius="14" BoxShadow="0 0 0 0 #00000000" Classes="glassCard">
+      <StackPanel Spacing="8">
+       <StackPanel Orientation="Horizontal" Spacing="8">
+        <TextBlock Text="高级自定义设置" FontSize="13" FontWeight="Medium"
+           Foreground="{DynamicResource SukiText}" Opacity="0.8" VerticalAlignment="Center"/>
+        <Border Padding="3,1" CornerRadius="4" Background="#4488FF">
+         <TextBlock Text="Beta" FontSize="9" Foreground="White"/>
+        </Border>
+       </StackPanel>
+       <CheckBox x:Name="CbAdvancedRender" Content="关闭 Chrome 标题栏，页面更一体化"
+          Margin="0,2,0,0"/>
+       <CheckBox x:Name="CbAcrylicBlur" Content="窗口模糊（需重启生效）"
+          Margin="0,6,0,0"/>
+       <TextBlock Text="不支持 Linux，启用后将会禁用自定义背景"
+          FontSize="10" Opacity="0.45" Margin="0,2,0,0"
+          Foreground="{DynamicResource SukiText}"/>
+       <TextBlock Text="提示：模糊启用时推荐切换为深色模式，效果更佳。"
+          FontSize="10" Opacity="0.35" Margin="0,2,0,0"
+          Foreground="{DynamicResource SukiText}"/>
+      </StackPanel>
+     </Border>
+     <Border Height="24" Background="Transparent"/>
+    </StackPanel>
+   </ScrollViewer>
+
    <ScrollViewer x:Name="EqPanel" Padding="16,12,16,16"
-       VerticalScrollBarVisibility="Hidden" IsVisible="False">
+       VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" IsVisible="False">
     <StackPanel Spacing="14">
      <!-- 标题行 -->
      <TextBlock Text="音效调节" FontSize="15" FontWeight="Medium"
@@ -334,25 +517,28 @@
 
      <!-- ====== 音效卡片 ====== -->
      <Border Padding="14,12"
-       CornerRadius="14" BoxShadow="0 1 4 0 #14000000" Classes="glassCard">
+       CornerRadius="14" BoxShadow="0 0 0 0 #00000000" Classes="glassCard">
       <StackPanel Spacing="8">
        <TextBlock Text="音效" FontSize="13" FontWeight="Medium"
           HorizontalAlignment="Center" Foreground="{DynamicResource SukiText}" Opacity="0.8"/>
        <UniformGrid Columns="2" HorizontalAlignment="Stretch">
-         <CheckBox x:Name="CbSpatial" Content="空间音效" Margin="0,2"
-            HorizontalAlignment="Center"/>
-         <CheckBox x:Name="CbGameSound" Content="游戏音效" Margin="0,2"
-            HorizontalAlignment="Center"/>
+        <CheckBox x:Name="CbSpatial" Content="空间音效" Margin="0,2"
+           HorizontalAlignment="Center"/>
+        <CheckBox x:Name="CbGameSound" Content="游戏音效" Margin="0,2"
+           HorizontalAlignment="Center"/>
+        <CheckBox x:Name="CbGame" Content="游戏模式" Margin="0,2"
+           HorizontalAlignment="Center"/>
        </UniformGrid>
       </StackPanel>
      </Border>
 
-      <!-- ====== 大师调音（预设列表） ====== -->
-      <Border Padding="14,14"
-        CornerRadius="14" BoxShadow="0 1 4 0 #14000000" Classes="glassCard">
-       <StackPanel Spacing="8">
-        <TextBlock Text="大师调音" FontSize="15" FontWeight="Bold"
-           HorizontalAlignment="Center" Foreground="{DynamicResource SukiText}"/>
+     <!-- ====== 预设列表 ====== -->
+     <Border Padding="14,14"
+       CornerRadius="14" BoxShadow="0 0 0 0 #00000000" Classes="glassCard">
+      <StackPanel Spacing="8">
+       <TextBlock Text="预设列表" FontSize="13" FontWeight="Medium"
+          HorizontalAlignment="Center" Foreground="{DynamicResource SukiText}"
+          Opacity="0.8" Margin="0,0,0,2"/>
 
        <Grid ColumnDefinitions="*,*">
         <!-- 左：系统预设 -->
@@ -383,9 +569,9 @@
             <Grid ColumnDefinitions="*,Auto" Margin="0,1">
              <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"
                 Foreground="{DynamicResource SukiText}"/>
-              <Button Content="删除" Height="22" FontSize="10"
-                  Padding="8,0" IsVisible="{Binding ShowDelete}"
-                  Click="EqListItemDelete_Click" Tag="{Binding EqId}" Grid.Column="1"/>
+             <Button Content="删除" Height="22" FontSize="10"
+                 Padding="8,0" IsVisible="{Binding ShowDelete}"
+                 Click="EqListItemDelete_Click" Tag="{Binding Name}" Grid.Column="1"/>
             </Grid>
            </DataTemplate>
           </ListBox.ItemTemplate>
@@ -397,16 +583,89 @@
 
      <!-- ====== 下：均衡器滑块（编辑/新建时展开，全宽） ====== -->
      <Border x:Name="EqSliderCard" Padding="14,14"
-       CornerRadius="14" BoxShadow="0 1 4 0 #14000000" Classes="glassCard"
+       CornerRadius="14" BoxShadow="0 0 0 0 #00000000" Classes="glassCard"
        IsVisible="False">
       <StackPanel Spacing="12">
        <TextBlock Text="均衡器" FontSize="13" FontWeight="Medium"
           HorizontalAlignment="Center" Foreground="{DynamicResource SukiText}"
           Opacity="0.8"/>
 
-        <!-- 按设备 customEqFrequency / 回读频段动态生成滑块 -->
-        <StackPanel x:Name="EqBandsPanel" Orientation="Horizontal" Height="220"
-            HorizontalAlignment="Center" Spacing="8"/>
+       <!-- dB 刻度 + 6 段滑块 -->
+       <Grid ColumnDefinitions="Auto,*,*,*,*,*,*" Height="220"
+           HorizontalAlignment="Center">
+        <Grid.Styles>
+         <Style Selector="Slider">
+          <Setter Property="Width" Value="36"/>
+          <Setter Property="Height" Value="180"/>
+          <Setter Property="Orientation" Value="Vertical"/>
+          <Setter Property="Minimum" Value="-6"/>
+          <Setter Property="Maximum" Value="6"/>
+          <Setter Property="Value" Value="0"/>
+          <Setter Property="TickFrequency" Value="1"/>
+          <Setter Property="IsSnapToTickEnabled" Value="True"/>
+         </Style>
+        </Grid.Styles>
+
+        <!-- dB 刻度 -->
+        <Grid Grid.Column="0" VerticalAlignment="Center" Margin="0,0,6,0" Height="180"
+            RowDefinitions="Auto,*,Auto">
+         <TextBlock Grid.Row="0" Text="+6" FontSize="9" Foreground="{DynamicResource SukiText}"
+            Opacity="0.35" HorizontalAlignment="Right" VerticalAlignment="Top"/>
+         <TextBlock Grid.Row="1" Text=" 0" FontSize="9" Foreground="{DynamicResource SukiText}"
+            Opacity="0.2" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+         <TextBlock Grid.Row="2" Text="-6" FontSize="9" Foreground="{DynamicResource SukiText}"
+            Opacity="0.35" HorizontalAlignment="Right" VerticalAlignment="Bottom"/>
+        </Grid>
+
+        <!-- 62 -->
+        <StackPanel Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+         <TextBlock x:Name="EqDb62" Text="0" FontSize="9" HorizontalAlignment="Center"
+            Foreground="{DynamicResource SukiText}" Opacity="0.5" Margin="0,0,0,2"/>
+         <Slider x:Name="EqSlider62"/>
+         <TextBlock Text="62" FontSize="10" HorizontalAlignment="Center"
+            Foreground="{DynamicResource SukiText}" Opacity="0.7" Margin="0,2,0,0"/>
+        </StackPanel>
+        <!-- 250 -->
+        <StackPanel Grid.Column="2" HorizontalAlignment="Center" VerticalAlignment="Center">
+         <TextBlock x:Name="EqDb250" Text="0" FontSize="9" HorizontalAlignment="Center"
+            Foreground="{DynamicResource SukiText}" Opacity="0.5" Margin="0,0,0,2"/>
+         <Slider x:Name="EqSlider250"/>
+         <TextBlock Text="250" FontSize="10" HorizontalAlignment="Center"
+            Foreground="{DynamicResource SukiText}" Opacity="0.7" Margin="0,2,0,0"/>
+        </StackPanel>
+        <!-- 1k -->
+        <StackPanel Grid.Column="3" HorizontalAlignment="Center" VerticalAlignment="Center">
+         <TextBlock x:Name="EqDb1k" Text="0" FontSize="9" HorizontalAlignment="Center"
+            Foreground="{DynamicResource SukiText}" Opacity="0.5" Margin="0,0,0,2"/>
+         <Slider x:Name="EqSlider1k"/>
+         <TextBlock Text="1k" FontSize="10" HorizontalAlignment="Center"
+            Foreground="{DynamicResource SukiText}" Opacity="0.7" Margin="0,2,0,0"/>
+        </StackPanel>
+        <!-- 4k -->
+        <StackPanel Grid.Column="4" HorizontalAlignment="Center" VerticalAlignment="Center">
+         <TextBlock x:Name="EqDb4k" Text="0" FontSize="9" HorizontalAlignment="Center"
+            Foreground="{DynamicResource SukiText}" Opacity="0.5" Margin="0,0,0,2"/>
+         <Slider x:Name="EqSlider4k"/>
+         <TextBlock Text="4k" FontSize="10" HorizontalAlignment="Center"
+            Foreground="{DynamicResource SukiText}" Opacity="0.7" Margin="0,2,0,0"/>
+        </StackPanel>
+        <!-- 8k -->
+        <StackPanel Grid.Column="5" HorizontalAlignment="Center" VerticalAlignment="Center">
+         <TextBlock x:Name="EqDb8k" Text="0" FontSize="9" HorizontalAlignment="Center"
+            Foreground="{DynamicResource SukiText}" Opacity="0.5" Margin="0,0,0,2"/>
+         <Slider x:Name="EqSlider8k"/>
+         <TextBlock Text="8k" FontSize="10" HorizontalAlignment="Center"
+            Foreground="{DynamicResource SukiText}" Opacity="0.7" Margin="0,2,0,0"/>
+        </StackPanel>
+        <!-- 16k -->
+        <StackPanel Grid.Column="6" HorizontalAlignment="Center" VerticalAlignment="Center">
+         <TextBlock x:Name="EqDb16k" Text="0" FontSize="9" HorizontalAlignment="Center"
+            Foreground="{DynamicResource SukiText}" Opacity="0.5" Margin="0,0,0,2"/>
+         <Slider x:Name="EqSlider16k"/>
+         <TextBlock Text="16k" FontSize="10" HorizontalAlignment="Center"
+            Foreground="{DynamicResource SukiText}" Opacity="0.7" Margin="0,2,0,0"/>
+        </StackPanel>
+       </Grid>
 
        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
         <Button x:Name="BtnEqCancel" Content="重置" Height="28" FontSize="11"
@@ -420,6 +679,7 @@
      <TextBlock x:Name="EqHintText" Text="选择一个预设或拖拽滑块开始调节"
         FontSize="10" HorizontalAlignment="Center"
         Opacity="0.3" Foreground="{DynamicResource SukiText}"/>
+     <Border Height="24" Background="Transparent"/>
     </StackPanel>
    </ScrollViewer>
 
@@ -430,7 +690,7 @@
         HorizontalAlignment="Center" Foreground="{DynamicResource SukiText}"/>
      <!-- 基本信息 -->
      <Border Padding="18,16"
-       CornerRadius="14" BoxShadow="0 1 4 0 #14000000" Classes="glassCard">
+       CornerRadius="14" BoxShadow="0 0 0 0 #00000000" Classes="glassCard">
       <StackPanel Spacing="10">
        <TextBlock Text="基本信息" FontSize="13" FontWeight="Medium"
           Foreground="{DynamicResource SukiText}" Opacity="0.8"/>
@@ -449,9 +709,25 @@
            Foreground="{DynamicResource SukiText}"/>
        </Grid>
       </StackPanel>
-      </Border>
-     </StackPanel>
-    </ScrollViewer>
+     </Border>
+     <!-- 音效增强互斥组 -->
+     <Border Padding="18,16"
+       CornerRadius="14" BoxShadow="0 0 0 0 #00000000" Classes="glassCard">
+      <StackPanel Spacing="10">
+       <TextBlock Text="音效增强" FontSize="13" FontWeight="Medium"
+          Foreground="{DynamicResource SukiText}" Opacity="0.8"/>
+       <TextBlock x:Name="DiEnhanceHint" Text="" FontSize="10"
+          Opacity="0.3" Foreground="{DynamicResource SukiText}"/>
+       <StackPanel x:Name="DiEnhanceGroup" Spacing="6">
+        <RadioButton x:Name="DiEnhanceNone" Content="关闭" GroupName="Enhancement"/>
+        <RadioButton x:Name="DiEnhanceSpatial" Content="空间音效" GroupName="Enhancement"/>
+        <RadioButton x:Name="DiEnhanceGame" Content="游戏音效" GroupName="Enhancement"/>
+        <RadioButton x:Name="DiEnhanceEq" Content="大师调音 (EQ)" GroupName="Enhancement"/>
+       </StackPanel>
+      </StackPanel>
+     </Border>
+    </StackPanel>
+   </ScrollViewer>
   </Grid>
 
   <!-- 隐藏控件占位（代码引用但不显示，放最外层避免影响布局） -->
@@ -473,17 +749,19 @@
        BoxShadow="0 6 30 0 #20000000"
        Background="{DynamicResource SukiCardBackground}"
        HorizontalAlignment="Center" VerticalAlignment="Center"
-       MinWidth="300">
-    <StackPanel Spacing="14">
+       MinWidth="300" MaxWidth="560" MaxHeight="460">
+    <Grid RowDefinitions="Auto,*,Auto,Auto" RowSpacing="14">
      <TextBlock x:Name="DialogTitle" Text="保存 EQ 预设"
         FontSize="14" FontWeight="Medium"
         Foreground="{DynamicResource SukiText}"/>
-     <TextBlock x:Name="DialogMessage" Text="请输入预设名称："
-        FontSize="12" TextWrapping="Wrap"
-        Foreground="{DynamicResource SukiText}"/>
-     <TextBox x:Name="DialogInput" PlaceholderText="输入预设名称"
+     <ScrollViewer Grid.Row="1" MaxHeight="300" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <TextBlock x:Name="DialogMessage" Text="请输入预设名称："
+         FontSize="12" TextWrapping="Wrap"
+         Foreground="{DynamicResource SukiText}"/>
+     </ScrollViewer>
+     <TextBox Grid.Row="2" x:Name="DialogInput" PlaceholderText="输入预设名称"
         Width="240" Height="28" FontSize="12" Padding="6,2"/>
-     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+     <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
       <Button x:Name="DialogCancelBtn" Content="取消"
           Height="28" FontSize="12" Padding="14,0"
           Click="DialogCancel_Click"/>
@@ -494,8 +772,9 @@
           Height="28" FontSize="12" Padding="14,0" IsDefault="True"
           Click="DialogConfirm_Click"/>
      </StackPanel>
-    </StackPanel>
+    </Grid>
    </Border>
   </Panel>
  </Grid>
+</Panel>
 </suki:SukiWindow>

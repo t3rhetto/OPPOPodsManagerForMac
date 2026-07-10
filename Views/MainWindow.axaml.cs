@@ -20,8 +20,10 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using SkiaSharp;
 using SukiUI;
 using SukiUI.Controls;
+using SukiUI.Enums;
 using SukiUI.Toasts;
 
 namespace OppoPodsManager;
@@ -41,16 +43,9 @@ file static class AppConst
 
 public partial class MainWindow : SukiWindow
 {
-    // 前端只依赖 IPodManager 契约；构造点耦合具体类，其余交互全走接口。
-    // 多耳机切换：本字段可被 SwitchToDevice 替换为定向到某副耳机的新实例；
-    // 所有事件处理器在触发时实时读取本字段，故替换后自动指向新设备。
-    private IPodManager _pods = new PodManager();
-    // 当前设备会话令牌：取消它 = 停掉当前耳机的连接循环（切换/关闭时用）。
-    private CancellationTokenSource? _sessionCts;
-    // 已发现的"当前已连接"耳机 (地址,名称)，与 CbDevice 选项一一对应。
-    private readonly List<(ulong addr, string name)> _devices = new();
-    // 抑制 CbDevice 程序化改动触发切换。
-    private bool _deviceComboSuppress;
+    // 前端只依赖 IPodManager 契约；构造点耦合具体类，其余交互全走接口
+    private readonly IPodManager _pods = new PodManager();
+    private CancellationTokenSource? _pollCts;
     private string _ancMain = "", _ancLevel = "";
     /// <summary>记住每个父模式上次选的子模式（如 降噪→深度），切换回来时恢复。</summary>
     private readonly Dictionary<string, string> _ancLastSub = new();
@@ -62,20 +57,34 @@ public partial class MainWindow : SukiWindow
     private readonly Dictionary<string, string> _ancChildToMain = new();  // 子模式键 → 所属主模式键
     private List<AncOption> _ancOptions = new();                          // 当前型号的 ANC 选项
     private string _ancBuiltForModel = "";                               // 已构建 UI 的型号（避免重复重建）
+    private string _ancSubSignature = "";
     private DateTime _featureUserSetAt = DateTime.MinValue;
     private WindowIcon? _iconConnected, _iconDisconnected;
     private TrayIcon? _trayIcon;
     private SmallWindow? _smallWindow;
     private DateTime _smallWindowShownAt = DateTime.MinValue;
     private readonly Util.LogManager _logManager = new();
+    private readonly ObservableCollection<string> _renderedLogEntries = new();
+    private int _renderedLogVersion = -1;
     private DispatcherTimer? _trayClickTimer;
     private DispatcherTimer? _logRefreshTimer;
     private bool _logAutoScroll = true;
-    private ScrollViewer? _logScrollViewer;
+    private bool _logScrollPending;
     /// <summary>日志显示模式：true=简化版（翻译+合并），false=完整版（原始行）。</summary>
     private bool _logSimplified = true;
+    private ScrollViewer? _logScrollViewer;
     private DispatcherTimer? _eqDebounceTimer;
+    private DispatcherTimer? _bgApplyDebounceTimer;
+    private bool _stateRefreshPending;
+    private string _trayMenuSignature = "";
+    private IImage? _backgroundImageSource;
+    private string _backgroundCacheKey = "";
     private bool _realClose;
+    private bool _initializingSettings;
+    private string? _bgSelected; // 当前选中的背景: "default" | filepath
+    private readonly List<string> _bgHistory = new(); // 历史背景图片路径
+    private readonly Dictionary<string, Avalonia.Media.Imaging.Bitmap> _backgroundBitmapCache = new();
+    private readonly Dictionary<string, Avalonia.Media.Imaging.Bitmap> _bgThumbCache = new();
     /// <summary>托盘 ANC 菜单项 → (发送键, 父键, 是否子模式)，避免闭包捕获。</summary>
     private readonly Dictionary<NativeMenuItem, (string key, string parentKey, bool isChild)> _trayAncMap = new();
     internal static ISukiToastManager ToastManager = new SukiToastManager();
@@ -84,6 +93,7 @@ public partial class MainWindow : SukiWindow
     private bool _wasConnected;
     private bool _lowBatteryAlerted;
     private bool _criticalBatteryAlerted;
+    private bool _applyingAppearancePreset;
     private List<string> _allModelNames = new();
 
     // 缓存画刷
@@ -93,16 +103,35 @@ public partial class MainWindow : SukiWindow
     // 主题自适应：浅色模式用暗色，深色模式用亮色
     private SolidColorBrush BrushGray => _isLightTheme ? _brushGrayLight : _brushGrayDark;
     private SolidColorBrush BrushWhite => _isLightTheme ? _brushDark : _brushWhiteDark;
-    private SolidColorBrush BrushLightGreen => _isLightTheme ? new(Color.FromRgb(0x2E, 0x7D, 0x32)) : new(Color.FromRgb(0x88, 0xCC, 0x88));
-    private SolidColorBrush BrushLightRed => _isLightTheme ? new(Color.FromRgb(0xC6, 0x28, 0x28)) : new(Color.FromRgb(0xFF, 0x88, 0x88));
-    private SolidColorBrush BrushCircleStroke => _isLightTheme ? new(Color.FromArgb(0x20, 0x00, 0x00, 0x00)) : new(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF));
-    private SolidColorBrush BrushCircleStrokeInactive => _isLightTheme ? new(Color.FromArgb(0x0C, 0x00, 0x00, 0x00)) : new(Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF));
     private static readonly SolidColorBrush _brushGrayDark = new(Color.FromRgb(0xCC, 0xCC, 0xCC));
     private static readonly SolidColorBrush _brushGrayLight = new(Color.FromRgb(0x55, 0x55, 0x55));
     private static readonly SolidColorBrush _brushWhiteDark = new SolidColorBrush(Colors.White);
     private static readonly SolidColorBrush _brushDark = new(Color.FromRgb(0x1A, 0x1A, 0x1A));
     private static readonly SolidColorBrush BrushAccent = new(Color.FromRgb(0x60, 0x90, 0xFF));
     private static readonly SolidColorBrush BrushWhitePure = new SolidColorBrush(Colors.White);
+    private readonly SolidColorBrush _glassCardBgBrush = new(Colors.White);
+    private readonly SolidColorBrush _sidebarSelectedBgBrush = new(Color.FromArgb(0x0C, 0x00, 0x00, 0x00));
+    private readonly SolidColorBrush _dialogOverlayBgBrush = new(Color.FromArgb(0x50, 0x00, 0x00, 0x00));
+    private readonly SolidColorBrush _windowBackgroundBrush = new(Color.FromRgb(0xE5, 0xE5, 0xEA));
+    private readonly SolidColorBrush _sidebarBackgroundBrush = new(Colors.White);
+    private readonly SolidColorBrush _deviceCurrentBgBrush = new(Color.FromArgb(0x12, 0x4C, 0xAF, 0x50));
+    // 复用画刷：状态文字、圆圈边框、圆圈背景、ANC 强调色（浅色主题）
+    private readonly SolidColorBrush _brushLightGreenLight = new(Color.FromRgb(0x2E, 0x7D, 0x32));
+    private readonly SolidColorBrush _brushLightGreenDark = new(Color.FromRgb(0x88, 0xCC, 0x88));
+    private readonly SolidColorBrush _brushLightRedLight = new(Color.FromRgb(0xC6, 0x28, 0x28));
+    private readonly SolidColorBrush _brushLightRedDark = new(Color.FromRgb(0xFF, 0x88, 0x88));
+    private readonly SolidColorBrush _brushCircleStrokeLight = new(Color.FromArgb(0x20, 0x00, 0x00, 0x00));
+    private readonly SolidColorBrush _brushCircleStrokeDark = new(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF));
+    private readonly SolidColorBrush _brushCircleStrokeInactiveLight = new(Color.FromArgb(0x0C, 0x00, 0x00, 0x00));
+    private readonly SolidColorBrush _brushCircleStrokeInactiveDark = new(Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF));
+    private readonly SolidColorBrush _brushCircleGrayLight = new(Color.FromArgb(0x15, 0x00, 0x00, 0x00));
+    private readonly SolidColorBrush _brushCircleGrayDark = new(Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF));
+    private readonly SolidColorBrush _brushAccentLight = new(Color.FromRgb(0x25, 0x63, 0xEB));
+    private SolidColorBrush BrushLightGreen => _isLightTheme ? _brushLightGreenLight : _brushLightGreenDark;
+    private SolidColorBrush BrushLightRed => _isLightTheme ? _brushLightRedLight : _brushLightRedDark;
+    private SolidColorBrush BrushCircleStroke => _isLightTheme ? _brushCircleStrokeLight : _brushCircleStrokeDark;
+    private SolidColorBrush BrushCircleStrokeInactive => _isLightTheme ? _brushCircleStrokeInactiveLight : _brushCircleStrokeInactiveDark;
+    private bool _themeResourceBrushesRegistered;
     private bool _isLightTheme;
 
     // ========== ANC 矢量图标 Path Data（从 OPPO 官方 Android App 提取）==========
@@ -143,10 +172,12 @@ public partial class MainWindow : SukiWindow
         {
             Log.D("UI", "MainWindow 构造开始");
         InitializeComponent();
+        AdaptToPlatform();
         NavHome.Classes.Add("selected");
+        LbLog.ItemsSource = _renderedLogEntries;
 
         // 挂载调试日志监听器，捕获 Log.D/Ex 输出到 UI 日志面板
-        _logManager.CleanOldLogs(7); // 启动时清理 7 天前的旧日志
+        _logManager.CleanOldLogs(7);
         Trace.Listeners.Add(new LogTraceListener(_logManager));
             Log.D("UI", "InitializeComponent OK");
 
@@ -166,10 +197,22 @@ public partial class MainWindow : SukiWindow
         CbTheme.SelectionChanged += CbTheme_Changed;
         TbCustomName.TextChanged += TbCustomName_Changed;
 
-        BuildEqBandControls(GetCurrentEqFrequencies());
+        // EQ 滑块事件
+        EqSlider62.PropertyChanged += EqSlider_Changed;
+        EqSlider250.PropertyChanged += EqSlider_Changed;
+        EqSlider1k.PropertyChanged += EqSlider_Changed;
+        EqSlider4k.PropertyChanged += EqSlider_Changed;
+        EqSlider8k.PropertyChanged += EqSlider_Changed;
+        EqSlider16k.PropertyChanged += EqSlider_Changed;
         // EQ 预设列表（左右分栏：系统预设 / 自定义）
         LbEqBuiltinPresets.SelectionChanged += EqBuiltinPresets_Changed;
         LbEqCustomPresets.SelectionChanged += EqCustomPresets_Changed;
+
+        // 设备详情 — 音效增强互斥
+        DiEnhanceNone.IsCheckedChanged += DiEnhance_Changed;
+        DiEnhanceSpatial.IsCheckedChanged += DiEnhance_Changed;
+        DiEnhanceGame.IsCheckedChanged += DiEnhance_Changed;
+        DiEnhanceEq.IsCheckedChanged += DiEnhance_Changed;
 
         // 初始加载自定义 EQ 预设列表
         RefreshEqPresetList();
@@ -183,15 +226,31 @@ public partial class MainWindow : SukiWindow
         ApplyTheme(themeIndex);
         CbTheme.SelectedIndex = themeIndex;
 
-        // 开机自启静默启动：不显示窗口、不在任务栏出现（仅托盘图标）。
-        // App.OnFrameworkInitializationCompleted 在 --minimized 时不会调用 Show()，
-        // 这里再关掉任务栏显示，确保开机时任务栏不闪现任务。
+        BackgroundAnimationEnabled = false;
+
+        // 透明度预设
+        CbTransparencyPreset.SelectedIndex = 0;
+        CbTransparencyPreset.SelectionChanged += (_, _) => ApplyTransparencyPreset(CbTransparencyPreset.SelectedIndex);
+
+        // 透明度：0 = 完全不透明，90 = 几乎透明
+        var opacityVal = Math.Clamp(SettingsManager.GetInt("CardOpacity", 50), 0, 90);
+        SlOpacity.Value = opacityVal;
+        TbOpacity.Text = $"{opacityVal}%";
+        SlOpacity.ValueChanged += (_, _) =>
+        {
+            var v = (int)SlOpacity.Value;
+            TbOpacity.Text = $"{v}%";
+            SettingsManager.SetInt("CardOpacity", v);
+            if (!_applyingAppearancePreset) CbTransparencyPreset.SelectedIndex = 0;
+            RefreshCardOpacity();
+        };
+        BtnResetOpacity.Click += (_, _) => SlOpacity.Value = 50;
+
+        // 开机自启静默启动：App.OnFrameworkInitializationCompleted 在 --minimized 时不会调用 Show()。
+        // 这里不要设置 WindowState.Minimized，否则 Windows 会在左下角生成最小化窗口残影。
         var args = Environment.GetCommandLineArgs();
         if (args.Contains("--minimized"))
-        {
             ShowInTaskbar = false;
-            WindowState = WindowState.Minimized;
-        }
 
         // 固定在屏幕右下角（已取消，使用默认居中）
 
@@ -203,7 +262,7 @@ public partial class MainWindow : SukiWindow
         Hosts = [new SukiToastHost { Manager = ToastManager }];
 
         // Load battery: official product image + icon paths
-        var caseBmp = AssetHelper.LoadBitmap("avares://OppoPodsManager/Assets/official_case.png");
+        var caseBmp = AssetHelper.LoadSharedBitmap("avares://OppoPodsManager/Assets/official_case.png");
         if (caseBmp != null) BatteryImage.Source = caseBmp;
 
         // Battery icon paths (from OPPO official app, same as SmallWindow)
@@ -219,17 +278,74 @@ public partial class MainWindow : SukiWindow
         IconCharge.Data = StreamGeometry.Parse(iconCharge);
         // 先填充默认 EQ 列表
         foreach (var kv in _pods.Caps.EqPresets) CbEq.Items.Add(kv.Key);
-        CbTray.IsChecked = SettingsManager.GetBool("TrayEnabled", false);
-        CbAuto.IsChecked = SettingsManager.GetBool("AutoStart", false);
-        // 用 SetString/GetString 避免 SetBool(false) 删除条目导致默认值恢复
-        var autoUpdate = SettingsManager.GetString("AutoCheckUpdate");
-        CbAutoUpdate.IsChecked = autoUpdate != "false"; // 首次 null → true
 
-        // 弹窗时长
-        var durIdx = SettingsManager.GetInt("ToastDuration", 2);
-        CbToastDuration.SelectedIndex = durIdx >= 0 && durIdx <= 5 ? durIdx : 2;
+        _initializingSettings = true;
+        try
+        {
+            CbTray.IsChecked = SettingsManager.GetBool("TrayEnabled", false);
+            CbAuto.IsChecked = SettingsManager.GetBool("AutoStart", false);
+            // 用 SetString/GetString 避免 SetBool(false) 删除条目导致默认值恢复
+            var autoUpdate = SettingsManager.GetString("AutoCheckUpdate");
+            CbAutoUpdate.IsChecked = autoUpdate != "false"; // 首次 null → true
+
+            // 弹窗时长
+            var durIdx = SettingsManager.GetInt("ToastDuration", 2);
+            CbToastDuration.SelectedIndex = durIdx >= 0 && durIdx <= 5 ? durIdx : 2;
+        }
+        finally
+        {
+            _initializingSettings = false;
+        }
+
         CbToastDuration.SelectionChanged += (_, _) =>
-            SettingsManager.SetInt("ToastDuration", CbToastDuration.SelectedIndex);
+        {
+            if (!_initializingSettings)
+                SettingsManager.SetInt("ToastDuration", CbToastDuration.SelectedIndex);
+        };
+
+        // 背景设置
+        _bgSelected = SettingsManager.GetString("BgCurrent") ?? "default";
+        var hist = SettingsManager.GetStringList("BgHistory");
+        if (hist != null) _bgHistory.AddRange(hist);
+        RefreshBgThumbs();
+        BgThumbDefault.PointerPressed += (_, _) => SelectBackground("default");
+        BgThumbAdd.PointerPressed += (_, _) => _ = BtnBgAdd_Click();
+        ApplySavedBackground();
+
+        // 背景图片显示调节
+        var bgBlur = SettingsManager.GetInt("BgBlur", 0);
+        SlBgBlur.Value = bgBlur;
+        TbBgBlur.Text = bgBlur.ToString();
+        SlBgBlur.ValueChanged += (_, _) =>
+        {
+            var v = (int)SlBgBlur.Value;
+            TbBgBlur.Text = v.ToString();
+            SettingsManager.SetInt("BgBlur", v);
+            var timer = EnsureBackgroundApplyDebounceTimer();
+            timer.Stop();
+            timer.Start();
+        };
+        BtnResetBgBlur.Click += (_, _) => SlBgBlur.Value = 0;
+
+        // 高级自定义设置 (Beta)
+        CbAdvancedRender.IsChecked = SettingsManager.GetBool("AdvancedRender", false);
+        if (CbAdvancedRender.IsChecked == true) EnableAdvancedRender();
+        CbAdvancedRender.IsCheckedChanged += (_, _) =>
+        {
+            var on = CbAdvancedRender.IsChecked == true;
+            SettingsManager.SetBool("AdvancedRender", on);
+            if (on) EnableAdvancedRender();
+            else DisableAdvancedRender();
+        };
+
+        // Acrylic 模糊开关
+        CbAcrylicBlur.IsChecked = SettingsManager.GetBool("AcrylicBlur", false);
+        if (CbAcrylicBlur.IsChecked == true)
+            SelectBackground("default");
+        UpdateBackgroundSettingsAvailability(CbAcrylicBlur.IsChecked == true);
+        CbAcrylicBlur.IsCheckedChanged += (_, _) =>
+            ToggleAcrylicBlur(CbAcrylicBlur.IsChecked == true);
+
 
         // 设备型号选择
         _allModelNames = DeviceCapabilities.GetModelNames();
@@ -272,14 +388,16 @@ public partial class MainWindow : SukiWindow
         TbCustomName.Text = customName ?? "";
         UpdateTitle();
 
-        // 多耳机选择器：发现在后台线程做，避免阻塞构造/UI
-        CbDevice.SelectionChanged += CbDevice_Changed;
-
-        WirePods(_pods);
+        _pods.StateChanged += OnStateChanged;
         Closing += OnWindowClosing;
-        Closed += (_, _) => { _sessionCts?.Cancel(); _pods.Dispose(); _logManager.Dispose(); };
-        _ = InitAndStartAsync();      // 异步发现已连接耳机 → 定向 → 启动连接循环
-        _ = CheckForUpdateAsync();    // 后台检查更新
+        Closed += (_, _) =>
+        {
+            _pollCts?.Cancel();
+            DisposeRuntimeUiResources();
+            _pods.Dispose();
+        };
+        _ = ConnectAsync();
+        _ = CheckForUpdateAsync(); // 后台检查更新
         }
         catch (Exception ex)
         {
@@ -288,208 +406,61 @@ public partial class MainWindow : SukiWindow
         }
     }
 
-    /// <summary>
-    /// 启动流程：后台发现"当前已连接"的耳机 → 若有则定向到（上次保存/第一个）→ 启动连接循环。
-    /// 发现为空时保留默认实例（连第一个匹配），连接成功后会自动补一次发现填充选择器。
-    /// </summary>
-    private async Task InitAndStartAsync()
+    private async Task ConnectAsync()
     {
-        try
+        while (!_realClose)
         {
-            var devices = await Task.Run(() => DeviceDiscovery.ListConnected());
-            ApplyDeviceList(devices);
-
-            if (_devices.Count > 0)
+            Log.D("UI", "ConnectAsync: 尝试连接");
+            await _pods.ConnectAsync();
+            if (_pods.IsConnected)
             {
-                ulong saved = ParseAddr(SettingsManager.GetString("LastDeviceAddr"));
-                int idx = saved != 0 ? _devices.FindIndex(d => d.addr == saved) : -1;
-                if (idx < 0) idx = 0;
-
-                var (addr, name) = _devices[idx];
-                _deviceComboSuppress = true;
-                CbDevice.SelectedIndex = idx;
-                _deviceComboSuppress = false;
-
-                var old = _pods;
-                UnwirePods(old);
-                _pods = new PodManager(addr, name);
-                WirePods(_pods);
-                try { old.Dispose(); } catch { }
-                Log.D("UI", $"InitAndStart: 定向连接 addr={addr:X12} name=\"{name}\"");
+                Log.D("UI", "ConnectAsync: 已连接,进入轮询");
+                _pollCts = new CancellationTokenSource();
+                await _pods.PollAsync(_pollCts.Token);
+                Log.D("UI", "ConnectAsync: 轮询结束");
             }
             else
             {
-                Log.D("UI", "InitAndStart: 当前无已连接耳机,沿用默认(第一个匹配)连接");
+                Log.D("UI", "ConnectAsync: 连接失败 -> " + (_pods.LastError ?? "unknown"));
             }
+            _ = Dispatcher.UIThread.InvokeAsync(() => OnStateChanged());
+            if (!_realClose) { Log.D("UI", "ConnectAsync: 5s 后重试"); await Task.Delay(5000); }
         }
-        catch (Exception ex) { Log.Ex("UI", "InitAndStartAsync", ex); }
-
-        StartSession();
     }
 
-    /// <summary>为当前 _pods 启动一个连接循环会话（带独立会话令牌）。</summary>
-    private void StartSession()
+    private DispatcherTimer EnsureEqDebounceTimer()
     {
-        _sessionCts = new CancellationTokenSource();
-        _ = ConnectLoop(_pods, _sessionCts.Token);
-    }
+        if (_eqDebounceTimer != null)
+            return _eqDebounceTimer;
 
-    /// <summary>
-    /// 单副耳机的连接/重连循环。绑定到传入的 pods 实例与会话令牌：
-    /// - 会话令牌取消（切换设备/关闭）→ 退出循环并释放该实例（本循环独占其生命周期）。
-    /// - Reconnect/Disconnect 只停 PollAsync，不取消会话，故循环会自动重连。
-    /// - UI 更新前用 ReferenceEquals 校验，避免慢速旧连接覆盖新设备界面。
-    /// </summary>
-    private async Task ConnectLoop(IPodManager pods, CancellationToken sessionCt)
-    {
-        try
+        _eqDebounceTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(150), DispatcherPriority.Background, (_, _) =>
         {
-            while (!_realClose && !sessionCt.IsCancellationRequested)
-            {
-                Log.D("UI", "ConnectLoop: 尝试连接");
-                await pods.ConnectAsync();
-                if (sessionCt.IsCancellationRequested) break;
+            _eqDebounceTimer?.Stop();
+            SendCurrentCustomEq();
+        });
+        return _eqDebounceTimer;
+    }
 
-                if (pods.IsConnected)
-                {
-                    Log.D("UI", "ConnectLoop: 已连接,进入轮询");
-                    using var pollCts = CancellationTokenSource.CreateLinkedTokenSource(sessionCt);
-                    // Reconnect/Disconnect 通过 pods.Disconnect() 令 PollAsync 自然结束
-                    await pods.PollAsync(pollCts.Token);
-                    Log.D("UI", "ConnectLoop: 轮询结束");
-                }
-                else
-                {
-                    Log.D("UI", "ConnectLoop: 连接失败 -> " + (pods.LastError ?? "unknown"));
-                }
+    private DispatcherTimer EnsureBackgroundApplyDebounceTimer()
+    {
+        if (_bgApplyDebounceTimer != null)
+            return _bgApplyDebounceTimer;
 
-                if (ReferenceEquals(pods, _pods))
-                    _ = Dispatcher.UIThread.InvokeAsync(() => OnStateChanged());
-
-                if (!_realClose && !sessionCt.IsCancellationRequested)
-                {
-                    Log.D("UI", "ConnectLoop: 5s 后重试");
-                    try { await Task.Delay(5000, sessionCt); } catch (OperationCanceledException) { break; }
-                }
-            }
-        }
-        finally
+        _bgApplyDebounceTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(220), DispatcherPriority.Background, (_, _) =>
         {
-            Log.D("UI", "ConnectLoop: 会话结束,释放该设备实例");
-            try { pods.Dispose(); } catch { }
-        }
+            _bgApplyDebounceTimer?.Stop();
+            ApplySavedBackground();
+        });
+        return _bgApplyDebounceTimer;
     }
 
-    // ==================== 多耳机选择器 ====================
-    // 只列"当前已连接"的耳机；发现动作仅在 3 个时机触发，绝不轮询：
-    //   1) 启动时（InitAndStartAsync）
-    //   2) 本机连接成功后一次（补齐列表，见 OnStateChanged 首连分支）
-    //   3) 用户点刷新按钮
-    private bool _deviceListRefreshedOnConnect;
-
-    /// <summary>把发现结果套用到 _devices + CbDevice 选项（须在 UI 线程调用）。保持不误触发切换。</summary>
-    private void ApplyDeviceList(IReadOnlyList<(ulong addr, string name)> devices)
+    private void OnStateChanged()
     {
-        // 记住当前选中地址，套用后尽量恢复
-        ulong current = _devices.Count > 0 && CbDevice.SelectedIndex >= 0 && CbDevice.SelectedIndex < _devices.Count
-            ? _devices[CbDevice.SelectedIndex].addr
-            : ParseAddr(SettingsManager.GetString("LastDeviceAddr"));
-
-        _devices.Clear();
-        _devices.AddRange(devices);
-
-        _deviceComboSuppress = true;
-        CbDevice.Items.Clear();
-        foreach (var (addr, name) in _devices) CbDevice.Items.Add(name);
-        int restore = current != 0 ? _devices.FindIndex(d => d.addr == current) : -1;
-        if (restore >= 0) CbDevice.SelectedIndex = restore;
-        _deviceComboSuppress = false;
-
-        // 选择器仅在有 2 副及以上已连接耳机时显示（单副无需切换）；刷新按钮常显以便重扫
-        CbDevice.IsVisible = _devices.Count >= 2;
-        BtnRefreshDevices.IsVisible = true;
-    }
-
-    /// <summary>后台重新发现已连接耳机并刷新选择器（供刷新按钮/首连补齐用）。</summary>
-    private async Task RefreshDeviceListAsync()
-    {
-        var devices = await Task.Run(() => DeviceDiscovery.ListConnected());
-        ApplyDeviceList(devices);
-    }
-
-    /// <summary>用户在选择器里切换耳机。</summary>
-    private void CbDevice_Changed(object? s, SelectionChangedEventArgs e)
-    {
-        if (_deviceComboSuppress) return;
-        int idx = CbDevice.SelectedIndex;
-        if (idx < 0 || idx >= _devices.Count) return;
-
-        var (addr, name) = _devices[idx];
-        // 与当前正连着的同一台则忽略
-        if (_pods.IsConnected && ParseAddr(SettingsManager.GetString("LastDeviceAddr")) == addr)
+        if (_stateRefreshPending)
             return;
 
-        Log.D("UI", $"用户操作: 切换耳机 -> addr={addr:X12} name=\"{name}\"");
-        SwitchToDevice(addr, name);
-    }
-
-    /// <summary>刷新按钮：后台重新扫描"当前已连接"的耳机。</summary>
-    private async void RefreshDevices_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        Log.D("UI", "用户操作: 刷新耳机列表");
-        try { await RefreshDeviceListAsync(); }
-        catch (Exception ex) { Log.Ex("UI", "RefreshDevices_Click", ex); }
-    }
-
-    /// <summary>
-    /// 切换到指定耳机：停当前会话(异步释放旧实例)→ 换 _pods → 重连。
-    /// 关闭可能过期的小窗（它持有旧 _pods 引用），下次打开会用新实例重建。
-    /// </summary>
-    private void SwitchToDevice(ulong addr, string? name)
-    {
-        // 1) 停当前会话（旧循环在 ConnectAsync 返回后会自行退出并释放旧实例）
-        _sessionCts?.Cancel();
-        _pods.Disconnect();          // 尽快让 PollAsync 结束
-
-        // 2) 解绑旧实例事件，关闭过期小窗
-        UnwirePods(_pods);
-        if (_smallWindow != null)
-        {
-            try { _smallWindow.Close(); } catch { }
-            _smallWindow = null;
-        }
-
-        // 3) 换上定向到新耳机的实例
-        _pods = new PodManager(addr, name);
-        WirePods(_pods);
-        _deviceListRefreshedOnConnect = false;   // 新设备连上后允许再补一次发现
-        SettingsManager.SetString("LastDeviceAddr", addr.ToString("X12"));
-
-        // 4) UI 立即反映"连接中"，并启动新会话
-        ResetUi();
-        OnStateChanged();
-        StartSession();
-    }
-
-    /// <summary>订阅 pods 的状态事件（合并为单一方法便于切换时解绑）。</summary>
-    private void WirePods(IPodManager pods) => pods.StateChanged += PodsStateChanged;
-    private void UnwirePods(IPodManager pods) => pods.StateChanged -= PodsStateChanged;
-
-    /// <summary>pods 状态变化统一处理：刷新主界面 + 同步多设备列表。</summary>
-    private void PodsStateChanged()
-    {
-        OnStateChanged();
-        Dispatcher.UIThread.Post(() => SyncMultiDeviceList());
-    }
-
-    /// <summary>解析 12 位十六进制地址字符串为 48 位地址；失败返回 0。</summary>
-    private static ulong ParseAddr(string? hex)
-    {
-        if (string.IsNullOrEmpty(hex)) return 0;
-        return ulong.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out var a) ? a : 0;
-    }
-
-    private void OnStateChanged() => Dispatcher.UIThread.Post(() =>
+        _stateRefreshPending = true;
+        Dispatcher.UIThread.Post(() =>
     {
         try
         {
@@ -509,30 +480,26 @@ public partial class MainWindow : SukiWindow
 
             if (caps.HasDualDevice)
             {
-                SyncMultiDeviceList();
+                RequestSyncMultiDeviceList();
             }
 
             if (!_wasConnected && s.Battery.Count > 0)
             {
                 _wasConnected = true;
 
-                // 检查是否低电/极低电，跳过普通弹窗直出对应类型
-                var anyCritical = s.Battery.Values.Any(v => v?.Level <= 10);
-                var anyLow = s.Battery.Values.Any(v => v?.Level <= 20 && v?.Level > 10);
-                if (!anyCritical && !anyLow)
+                var initialToastType = GetBatteryToastType(s);
+                if (initialToastType == ToastType.CriticalBattery)
                 {
-                    _ = ToastWindow.ShowAsync(s, GetDeviceDisplayName(), ToastType.Battery, GetToastDuration());
+                    _criticalBatteryAlerted = true;
+                    _lowBatteryAlerted = true;
                 }
+                else if (initialToastType == ToastType.LowBattery)
+                {
+                    _lowBatteryAlerted = true;
+                }
+                _ = ToastWindow.ShowAsync(s, GetDeviceDisplayName(), initialToastType, GetToastDuration());
 
                 _pods.SendQueryEqAll();  // 首次连接时查询设备端 EQ 列表
-
-                // 首次连接成功后补一次"已连接耳机"发现（事件驱动，非轮询），填充选择器。
-                // 每个会话只补一次，避免重连反复扫描。
-                if (!_deviceListRefreshedOnConnect)
-                {
-                    _deviceListRefreshedOnConnect = true;
-                    _ = RefreshDeviceListAsync();
-                }
             }
         }
         else
@@ -565,7 +532,7 @@ public partial class MainWindow : SukiWindow
         var prevCount = _pods.State.DeviceEqEntries.Count;
         if (CbEq.ItemCount == 0 || prevCount != _lastDeviceEqCount
             || caps.EqPresets.Keys.Any(k => !CbEq.Items.Contains(k))
-            || _pods.State.DeviceEqEntries.Any(e => !string.IsNullOrWhiteSpace(e.Name) && !CbEq.Items.Contains(e.Name)))
+            || _pods.State.DeviceEqEntries.Any(e => !string.IsNullOrEmpty(e.Name) && !CbEq.Items.Contains(e.Name)))
         {
             RefreshAllEqViews();
         }
@@ -578,23 +545,17 @@ public partial class MainWindow : SukiWindow
         SetBatLabel(CaseLabel, s.Battery.GetValueOrDefault("C"));
         ChargeIndicator.IsVisible = s.Battery.Values.Any(v => v?.Charging == true);
 
-        if (!_criticalBatteryAlerted)
+        var batteryToastType = GetBatteryToastType(s);
+        if (!_criticalBatteryAlerted && batteryToastType == ToastType.CriticalBattery)
         {
-            if ((batL is { } lc && lc.Lvl <= 10) || (batR is { } rc && rc.Lvl <= 10))
-            {
-                _criticalBatteryAlerted = true;
-                _lowBatteryAlerted = true; // 极低电量跳过低电量弹窗
-                _ = ToastWindow.ShowAsync(s, GetDeviceDisplayName(), ToastType.CriticalBattery, GetToastDuration());
-            }
+            _criticalBatteryAlerted = true;
+            _lowBatteryAlerted = true; // 极低电量跳过低电量弹窗
+            _ = ToastWindow.ShowAsync(s, GetDeviceDisplayName(), ToastType.CriticalBattery, GetToastDuration());
         }
-
-        if (!_lowBatteryAlerted)
+        else if (!_lowBatteryAlerted && batteryToastType == ToastType.LowBattery)
         {
-            if ((batL is { } l && l.Lvl <= 20 && l.Lvl > 10) || (batR is { } r && r.Lvl <= 20 && r.Lvl > 10))
-            {
-                _lowBatteryAlerted = true;
-                _ = ToastWindow.ShowAsync(s, GetDeviceDisplayName(), ToastType.LowBattery, GetToastDuration());
-            }
+            _lowBatteryAlerted = true;
+            _ = ToastWindow.ShowAsync(s, GetDeviceDisplayName(), ToastType.LowBattery, GetToastDuration());
         }
 
         var parts = new List<string>();
@@ -680,7 +641,12 @@ public partial class MainWindow : SukiWindow
         {
             Log.Ex("UI", "OnStateChanged", ex);
         }
+        finally
+        {
+            _stateRefreshPending = false;
+        }
     });
+    }
 
     private static void SetBatLabel(TextBlock l, (int Lvl, bool Chg)? d)
     {
@@ -693,63 +659,38 @@ public partial class MainWindow : SukiWindow
 
     private void CbTray_Changed(object? s, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        if (_initializingSettings) return;
         SettingsManager.SetBool("TrayEnabled", CbTray.IsChecked == true);
     }
 
     private void CbAuto_Changed(object? s, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        bool enable = CbAuto.IsChecked == true;
-        SettingsManager.SetBool("AutoStart", enable);
-        try { ApplyAutoStart(enable); }
-        catch (Exception ex) { Log.Ex("UI", "ApplyAutoStart", ex); }
-    }
-
-    /// <summary>
-    /// 按平台注册/取消开机自启（都带 --minimized 静默启动）：
-    ///   Windows：写 HKCU\...\Run 注册表值；
-    ///   Linux：写 ~/.config/autostart/oppopods.desktop（XDG 自启规范，GNOME/KDE/XFCE 通用）。
-    /// 其它平台静默跳过。
-    /// </summary>
-    private static void ApplyAutoStart(bool enable)
-    {
-        var exe = Environment.ProcessPath ?? "";
-        if (OperatingSystem.IsWindows())
+        if (_initializingSettings) return;
+        try
         {
             using var runKey = Microsoft.Win32.Registry.CurrentUser
                 .OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
             if (runKey is null) return;
-            if (enable) runKey.SetValue("OPPOPods", $"\"{exe}\" --minimized");
-            else { try { runKey.DeleteValue("OPPOPods", throwOnMissingValue: false); } catch { } }
-        }
-        else if (OperatingSystem.IsLinux())
-        {
-            // 全限定 System.IO 以避免与 Avalonia.Controls.Shapes.Path 冲突
-            var autostartDir = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "autostart");
-            var desktopFile = System.IO.Path.Combine(autostartDir, "oppopods.desktop");
-            if (enable)
+
+            if (CbAuto.IsChecked == true)
             {
-                System.IO.Directory.CreateDirectory(autostartDir);
-                // Exec 用 --minimized 静默启动；X-GNOME-Autostart-enabled 供部分 DE 识别。
-                var content =
-                    "[Desktop Entry]\n" +
-                    "Type=Application\n" +
-                    "Name=OPPO Pods Manager\n" +
-                    $"Exec=\"{exe}\" --minimized\n" +
-                    "Terminal=false\n" +
-                    "X-GNOME-Autostart-enabled=true\n";
-                System.IO.File.WriteAllText(desktopFile, content);
-                Log.D("UI", $"ApplyAutoStart: 已写入 {desktopFile}");
+                SettingsManager.SetBool("AutoStart", true);
+                var exe = Environment.ProcessPath ?? "";
+                runKey.SetValue("OPPOPods", $"\"{exe}\" --minimized");
             }
             else
             {
-                try { if (System.IO.File.Exists(desktopFile)) System.IO.File.Delete(desktopFile); } catch { }
-                Log.D("UI", "ApplyAutoStart: 已移除 Linux 自启");
+                SettingsManager.SetBool("AutoStart", false);
+                try { runKey.DeleteValue("OPPOPods", throwOnMissingValue: false); } catch { }
             }
         }
+        catch { }
     }
     private void CbAutoUpdate_Changed(object? s, Avalonia.Interactivity.RoutedEventArgs e)
-        => SettingsManager.SetString("AutoCheckUpdate", CbAutoUpdate.IsChecked == true ? "true" : "false");
+    {
+        if (_initializingSettings) return;
+        SettingsManager.SetString("AutoCheckUpdate", CbAutoUpdate.IsChecked == true ? "true" : "false");
+    }
 
     /// <summary>按当前型号 caps.AncOptions 动态生成主/子模式圆形图标按钮（型号不变则跳过重建）。</summary>
     private void BuildAncUi(DeviceCapabilities caps)
@@ -766,6 +707,7 @@ public partial class MainWindow : SukiWindow
         AncSubRow.Children.Clear();
         AncSubRow.ColumnDefinitions.Clear();
         _ancSubButtons.Clear();
+        _ancSubSignature = "";
         AncSubRow.IsVisible = false;
 
         // 无 ANC 选项或未连接 → 显示占位文字，隐藏按钮行
@@ -796,9 +738,17 @@ public partial class MainWindow : SukiWindow
     /// <summary>填充子模式行（纯文字按钮，不带图标）。</summary>
     private void PopulateAncSub(AncOption container)
     {
+        var signature = container.Key + ":" + string.Join("|", container.Children.Select(c => $"{c.Key};{c.Label}"));
+        if (_ancSubSignature == signature && _ancSubButtons.Count == container.Children.Count)
+            return;
+
+        foreach (var (_, (btn, _)) in _ancSubButtons)
+            btn.Click -= AncSub_Click;
+
         AncSubRow.Children.Clear();
         AncSubRow.ColumnDefinitions.Clear();
         _ancSubButtons.Clear();
+        _ancSubSignature = signature;
 
         int col = 0;
         for (int i = 0; i < container.Children.Count; i++)
@@ -924,9 +874,7 @@ public partial class MainWindow : SukiWindow
     private void HighlightAnc()
     {
         var circleGray = GetCircleGray();
-        var accent = _isLightTheme
-            ? (IBrush)new SolidColorBrush(Color.FromRgb(0x25, 0x63, 0xEB))
-            : (IBrush)BrushAccent;
+        var accent = _isLightTheme ? (IBrush)_brushAccentLight : (IBrush)BrushAccent;
         foreach (var (key, (bg, icon, label)) in _ancMainButtons)
         {
             var active = key == _ancMain;
@@ -1076,40 +1024,15 @@ public partial class MainWindow : SukiWindow
         {
             Log.D("UI", $"用户操作: 游戏音效开关 -> {on}");
             _featureUserSetAt = DateTime.Now;
-            if (on)
+            // 音效增强互斥：开游戏音效 → 需显式关空间音效（设备不会自动关），UI 同步取消勾选并下发关闭命令
+            if (on && _pods.Caps.GameSoundMutexSpatial && CbSpatial.IsChecked == true)
             {
-                // 音效增强互斥：开游戏音效 → 需显式关空间音效（设备不会自动关），UI 同步取消勾选并下发关闭命令
-                if (_pods.Caps.GameSoundMutexSpatial && CbSpatial.IsChecked == true)
-                {
-                    SetSpatialCheckedSilent(false);
-                    _pods.SendSpatial(false);
-                }
-                // EQ 互斥：开游戏音效 → 重置 EQ 到默认预设（"关闭"/无效果）
-                if (_pods.Caps.GameSoundMutexEq)
-                {
-                    var def = _pods.Caps.DefaultEqPreset;
-                    _pods.SendEq(def);
-                    _eqCurrentPreset = def;
-                    // 同步主页下拉框与面板列表选中
-                    CbEq.SelectionChanged -= CbEq_SelectionChanged;
-                    CbEq.SelectedItem = def;
-                    CbEq.SelectionChanged += CbEq_SelectionChanged;
-                    // 面板内置/自定义列表均取消选中
-                    _eqSuppressListEvent = true;
-                    LbEqBuiltinPresets.SelectedItem = null;
-                    LbEqCustomPresets.SelectedItem = null;
-                    _eqSuppressListEvent = false;
-                }
-                // 互斥禁用：空间音效禁用 + EQ 控制禁用
-                CbSpatial.IsEnabled = false;
-                SetEqControlsEnabled(false);
+                SetSpatialCheckedSilent(false);
+                _pods.SendSpatial(false);
             }
-            else
-            {
-                // 关游戏音效 → 恢复空间音效 + EQ 控制
-                CbSpatial.IsEnabled = true;
-                SetEqControlsEnabled(true);
-            }
+            // 互斥禁用：开游戏音效 → 空间音效禁用 + EQ 控制（预设列表+滑块）禁用；关 → 恢复
+            CbSpatial.IsEnabled = !on;
+            SetEqControlsEnabled(!on);
             _pods.SendGameSound(on);
         }
     }
@@ -1117,10 +1040,18 @@ public partial class MainWindow : SukiWindow
     private void SetEqControlsEnabled(bool enabled)
     {
         // 均衡器滑块 + dB 标签
-        foreach (var slider in _eqSliders.Values)
-            slider.IsEnabled = enabled;
-        foreach (var label in _eqDbLabels.Values)
-            label.Opacity = enabled ? 0.95 : 0.35;
+        EqSlider62.IsEnabled = enabled;
+        EqSlider250.IsEnabled = enabled;
+        EqSlider1k.IsEnabled = enabled;
+        EqSlider4k.IsEnabled = enabled;
+        EqSlider8k.IsEnabled = enabled;
+        EqSlider16k.IsEnabled = enabled;
+        EqDb62.Opacity = enabled ? 0.5 : 0.2;
+        EqDb250.Opacity = enabled ? 0.5 : 0.2;
+        EqDb1k.Opacity = enabled ? 0.5 : 0.2;
+        EqDb4k.Opacity = enabled ? 0.5 : 0.2;
+        EqDb8k.Opacity = enabled ? 0.5 : 0.2;
+        EqDb16k.Opacity = enabled ? 0.5 : 0.2;
         // 预设列表 + 新建按钮
         LbEqBuiltinPresets.IsEnabled = enabled;
         LbEqCustomPresets.IsEnabled = enabled;
@@ -1177,19 +1108,6 @@ public partial class MainWindow : SukiWindow
         if (_pods.Caps.EqPresets.ContainsKey(name)
             || _pods.State.DeviceEqEntries.Any(ev => ev.Name == name))
         {
-            // EQ ↔ 游戏音效互斥：选中非默认预设且游戏音效开启 → 先关游戏音效
-            if (name != _pods.Caps.DefaultEqPreset
-                && _pods.Caps.GameSoundMutexEq
-                && CbGameSound.IsChecked == true)
-            {
-                Log.D("UI", $"EQ下拉: 选中预设 {name} 互斥游戏音效 → 关闭");
-                _featureUserSetAt = DateTime.Now;
-                SetGameSoundCheckedSilent(false);
-                CbSpatial.IsEnabled = true;
-                SetEqControlsEnabled(true);
-                _pods.SendGameSound(false);
-            }
-
             _eqCurrentPreset = name;
             _pods.SendEq(name);
             // 同步到 EQ 面板的预设列表
@@ -1295,7 +1213,7 @@ public partial class MainWindow : SukiWindow
             {
                 StatusDot.IsVisible = false;
                 StatusText.IsVisible = false;
-                SyncMultiDeviceList();
+                RequestSyncMultiDeviceList();
             }
         }
     }
@@ -1321,7 +1239,7 @@ public partial class MainWindow : SukiWindow
         {
             case 0:
                 theme.ChangeBaseTheme(Avalonia.Styling.ThemeVariant.Default);
-                _isLightTheme = Application.Current?.ActualThemeVariant == Avalonia.Styling.ThemeVariant.Light;
+                _isLightTheme = DetectSystemLightTheme();
                 break;
             case 1:
                 theme.ChangeBaseTheme(Avalonia.Styling.ThemeVariant.Dark);
@@ -1335,11 +1253,15 @@ public partial class MainWindow : SukiWindow
         RefreshThemeColors();
     }
 
-    private IBrush GetCircleGray() => _isLightTheme
-        ? new SolidColorBrush(Color.FromArgb(0x15, 0x00, 0x00, 0x00))
-        : new SolidColorBrush(Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF));
+    private static bool DetectSystemLightTheme()
+    {
+        var actualTheme = Application.Current?.ActualThemeVariant;
+        return actualTheme == Avalonia.Styling.ThemeVariant.Light;
+    }
 
-    private void RefreshThemeColors()
+    private IBrush GetCircleGray() => _isLightTheme ? _brushCircleGrayLight : _brushCircleGrayDark;
+
+    private void RefreshThemeColors(bool refreshState = true)
     {
         // 清除之前可能残留的 SukiUI 资源覆盖，让 SukiUI 原生主题系统接管
         // （按钮、ComboBox 等控件的 Background 绑定到 SukiBackground，
@@ -1347,46 +1269,81 @@ public partial class MainWindow : SukiWindow
         Resources.Remove("SukiBackground");
         Resources.Remove("SukiCardBackground");
 
-        // 窗口背景：浅色微灰，深色透明
-        Background = _isLightTheme
-            ? new SolidColorBrush(Color.FromRgb(0xE5, 0xE5, 0xEA))
-            : BrushTransparent;
+        EnsureThemeResourceBrushes();
 
-        // 深色毛玻璃(10%白) / 浅色纯白
-        var glassBg = _isLightTheme
-            ? (IBrush)new SolidColorBrush(Colors.White)
-            : (IBrush)new SolidColorBrush(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF));
-        Resources["GlassCardBg"] = glassBg;
+        // 窗口背景：浅色微灰，深色透明。复用同一个画刷对象，避免频繁替换资源触发 DynamicResource 重建。
+        _windowBackgroundBrush.Color = _isLightTheme
+            ? Color.FromRgb(0xE5, 0xE5, 0xEA)
+            : Colors.Transparent;
+        Background = _windowBackgroundBrush;
 
-        // 侧边栏：浅色纯白 / 深色毛玻璃
-        var sidebarBg = _isLightTheme
-            ? (IBrush)new SolidColorBrush(Colors.White)
-            : (IBrush)new SolidColorBrush(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF));
+        var transparencyPct = Math.Clamp(SettingsManager.GetInt("CardOpacity", 50), 0, 90);
+        var alpha = (byte)Math.Clamp(255 - (transparencyPct * 255 / 100), 25, 255); // 0→255, 90→26
+        var glassAlpha = _isLightTheme ? alpha : (byte)Math.Clamp(alpha * 0.35, 9, 255);
 
-        // 侧边栏底框
-        SidebarBorder.Background = sidebarBg;
+        // 卡片背景：浅色使用白色半透；深色使用深色半透。Linux 下白色半透卡片容易呈现为白底。
+        var cardBase = _isLightTheme ? Color.FromRgb(0xFF, 0xFF, 0xFF) : Color.FromRgb(0x1C, 0x1C, 0x1E);
+        _glassCardBgBrush.Color = Color.FromArgb(alpha, cardBase.R, cardBase.G, cardBase.B);
+
+        // 侧边栏底框与卡片背景保持一致，复用画刷对象。
+        _sidebarBackgroundBrush.Color = Color.FromArgb(alpha, cardBase.R, cardBase.G, cardBase.B);
+        SidebarBorder.Background = _sidebarBackgroundBrush;
 
         // 侧边栏选中高亮：浅色灰底，深色微白
-        var selectedBg = _isLightTheme
-            ? (IBrush)new SolidColorBrush(Color.FromArgb(0x0C, 0x00, 0x00, 0x00))
-            : (IBrush)new SolidColorBrush(Color.FromArgb(0x0A, 0xFF, 0xFF, 0xFF));
-        Resources["SidebarSelectedBg"] = selectedBg;
+        _sidebarSelectedBgBrush.Color = _isLightTheme
+            ? Color.FromArgb(0x0C, 0x00, 0x00, 0x00)
+            : Color.FromArgb(0x0A, 0xFF, 0xFF, 0xFF);
 
         // 弹窗遮罩：深色半透明黑 / 浅色半透明白
-        Resources["DialogOverlayBg"] = _isLightTheme
-            ? (IBrush)new SolidColorBrush(Color.FromArgb(0x50, 0x00, 0x00, 0x00))
-            : (IBrush)new SolidColorBrush(Color.FromArgb(0x80, 0x00, 0x00, 0x00));
+        _dialogOverlayBgBrush.Color = _isLightTheme
+            ? Color.FromArgb(0x50, 0x00, 0x00, 0x00)
+            : Color.FromArgb(0x80, 0x00, 0x00, 0x00);
 
         // 重置对话框确认按钮颜色，避免主题切换后残留
         if (DialogConfirmBtn.IsVisible)
             DialogConfirmBtn.Background = Brushes.Transparent;
 
-        RefreshEqBandVisuals();
         HighlightAnc();
         var s = _pods.State;
         StatusDot.Fill = s.Connected ? BrushGreen : BrushRed;
         StatusText.Foreground = s.Connected ? BrushLightGreen : BrushLightRed;
-        if (!_realClose) OnStateChanged();
+        if (refreshState && !_realClose) OnStateChanged();
+    }
+
+    private void EnsureThemeResourceBrushes()
+    {
+        if (_themeResourceBrushesRegistered)
+            return;
+
+        Resources["GlassCardBg"] = _glassCardBgBrush;
+        Resources["SidebarSelectedBg"] = _sidebarSelectedBgBrush;
+        Resources["DialogOverlayBg"] = _dialogOverlayBgBrush;
+        _themeResourceBrushesRegistered = true;
+    }
+
+    private void ApplyTransparencyPreset(int idx)
+    {
+        if (idx <= 0) return;
+        var card = idx switch
+        {
+            1 => 0,  // 清晰
+            3 => 90, // 通透
+            _ => 50, // 平衡
+        };
+        _applyingAppearancePreset = true;
+        try
+        {
+            SlOpacity.Value = card;
+        }
+        finally
+        {
+            _applyingAppearancePreset = false;
+        }
+    }
+
+    private void RefreshCardOpacity()
+    {
+        RefreshThemeColors(refreshState: false); // 只更新复用画刷颜色，不触发完整状态刷新链路
     }
 
     private static void UpdateGlassCards(ScrollViewer sv, IBrush bg)
@@ -1425,6 +1382,16 @@ public partial class MainWindow : SukiWindow
         return idx switch { 0 => 3000, 1 => 4000, 3 => 6000, 4 => 7000, 5 => 8000, _ => 5000 };
     }
 
+    private static ToastType GetBatteryToastType(PodState state)
+    {
+        // 电量提示统一看左右耳；充电盒低电不单独触发低电警告，避免首次连接跳过普通弹窗。
+        var left = state.Battery.GetValueOrDefault("L")?.Level;
+        var right = state.Battery.GetValueOrDefault("R")?.Level;
+        if ((left is <= 10) || (right is <= 10)) return ToastType.CriticalBattery;
+        if ((left is > 10 and <= 20) || (right is > 10 and <= 20)) return ToastType.LowBattery;
+        return ToastType.Battery;
+    }
+
     private void UpdateTitle()
     {
         var name = GetDeviceDisplayName();
@@ -1443,6 +1410,7 @@ public partial class MainWindow : SukiWindow
     private void NavHome_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e) => ShowPage("home");
     private void NavEq_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e) => ShowPage("eq");
     private void NavDeviceInfo_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e) => ShowPage("deviceinfo");
+    private void NavPersonal_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e) => ShowPage("personal");
     private void NavLog_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e) => ShowPage("log");
     private void NavSettings_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e) => ShowPage("settings");
 
@@ -1452,6 +1420,7 @@ public partial class MainWindow : SukiWindow
         EqPanel.IsVisible = page == "eq";
         if (page == "eq" && _pods.IsConnected) _pods.SendQueryEqAll();
         DeviceInfoPanel.IsVisible = page == "deviceinfo";
+        PersonalPanel.IsVisible = page == "personal";
         SettingsPanel.IsVisible = page == "settings";
         LogPanel.IsVisible = page == "log";
         AboutPanel.IsVisible = page == "about";
@@ -1459,13 +1428,21 @@ public partial class MainWindow : SukiWindow
         NavHome.Classes.Remove("selected");
         NavEq.Classes.Remove("selected");
         NavDeviceInfo.Classes.Remove("selected");
+        NavPersonal.Classes.Remove("selected");
         NavSettings.Classes.Remove("selected");
 
         if (page == "home") NavHome.Classes.Add("selected");
         else if (page == "eq") NavEq.Classes.Add("selected");
         else if (page == "deviceinfo") NavDeviceInfo.Classes.Add("selected");
+        else if (page == "personal") NavPersonal.Classes.Add("selected");
         else NavSettings.Classes.Add("selected");
 
+        if (page != "log")
+        {
+            _logRefreshTimer?.Stop();
+            _logScrollPending = false;
+            _logAutoScroll = true;
+        }
         if (page == "deviceinfo") RefreshDeviceInfo();
         if (page == "eq") RefreshEqPresetList();
         if (page == "log") RefreshLogView();
@@ -1473,6 +1450,395 @@ public partial class MainWindow : SukiWindow
 
     private void About_Click(object? s, RoutedEventArgs e) => ShowPage("about");
     private void AboutBack_Click(object? s, RoutedEventArgs e) => ShowPage("settings");
+
+    /// <summary>平台适配：根据保存的设置，在构造阶段应用渲染管线配置。</summary>
+    private void AdaptToPlatform()
+    {
+        if (SettingsManager.GetBool("AcrylicBlur", false))
+        {
+            TransparencyLevelHint = new List<WindowTransparencyLevel>
+            {
+                WindowTransparencyLevel.AcrylicBlur,
+                WindowTransparencyLevel.Transparent
+            };
+            Background = Avalonia.Media.Brushes.Transparent;
+            SidebarFullBg.IsVisible = true;
+            SidebarBorder.Background = Avalonia.Media.Brushes.Transparent;
+
+            if (OperatingSystem.IsWindows())
+                BackgroundShaderCode = "vec4 main(vec2 fragCoord) { return vec4(0.0); }";
+        }
+        if (SettingsManager.GetBool("AdvancedRender", false))
+            EnableAdvancedRender();
+    }
+
+    /// <summary>Acrylic 模糊开/关（仅保存设置，需重启生效）。</summary>
+    private void ToggleAcrylicBlur(bool on)
+    {
+        SettingsManager.SetBool("AcrylicBlur", on);
+        if (on)
+            SelectBackground("default");
+        UpdateBackgroundSettingsAvailability(on);
+
+        ToastManager.CreateToast()
+            .WithTitle(on ? "Acrylic 模糊已启用" : "Acrylic 模糊已关闭")
+            .WithContent(on ? "已切回默认背景，自定义背景选项将不可用，重启应用后生效。" : "自定义背景选项已恢复，重启应用后生效。")
+            .Dismiss().After(TimeSpan.FromSeconds(3)).Queue();
+    }
+
+    private void UpdateBackgroundSettingsAvailability(bool acrylicBlurEnabled)
+    {
+        var enabled = !acrylicBlurEnabled;
+        BackgroundSettingsContent.IsEnabled = enabled;
+        BackgroundSettingsContent.Opacity = enabled ? 1 : 0.45;
+        BgThumbDefault.Classes.Set("selected", true);
+    }
+
+    /// <summary>启用高级渲染：关 SukiWindow Chrome + 简易标题栏 + AcrylicBlur。</summary>
+    private void EnableAdvancedRender()
+    {
+        IsTitleBarVisible = false;
+        CustomTitleBar.IsVisible = true;
+        SidebarFullBg.IsVisible = true;
+        SidebarBorder.Background = Avalonia.Media.Brushes.Transparent;
+        RootGrid.Margin = new Thickness(0, 32, 0, 0);
+    }
+
+    private void DisableAdvancedRender()
+    {
+        IsTitleBarVisible = true;
+        CustomTitleBar.IsVisible = false;
+        SidebarFullBg.IsVisible = false;
+        SidebarBorder.Background = null;
+        RootGrid.Margin = default;
+    }
+
+    private void TitleBarDrag_PointerPressed(object? s, Avalonia.Input.PointerPressedEventArgs e)
+        => BeginMoveDrag(e);
+
+    private void CustomMin_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
+        => WindowState = WindowState.Minimized;
+    private void CustomMax_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
+        => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+    private void CustomClose_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
+        => Close();
+
+    // ===== 背景设置 =====
+    private void BtnBgLeft_Click(object? s, RoutedEventArgs e)
+        => BgThumbScroller.Offset = BgThumbScroller.Offset.WithX(Math.Max(0, BgThumbScroller.Offset.X - 200));
+
+    private void BtnBgRight_Click(object? s, RoutedEventArgs e)
+        => BgThumbScroller.Offset = BgThumbScroller.Offset.WithX(
+            Math.Min(BgThumbScroller.Extent.Width - BgThumbScroller.Viewport.Width,
+                     BgThumbScroller.Offset.X + 200));
+
+    private async Task BtnBgAdd_Click()
+    {
+        if (CbAcrylicBlur.IsChecked == true)
+            return;
+
+        var storage = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (storage == null) return;
+        var files = await storage.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = "选择背景图片",
+            FileTypeFilter = new List<Avalonia.Platform.Storage.FilePickerFileType>
+            {
+                new("图片") { Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.bmp", "*.webp" } }
+            },
+            AllowMultiple = false,
+        });
+        if (files is { Count: > 0 })
+            AddBgHistory(files[0].Path.LocalPath);
+    }
+
+    /// <summary>选中背景（default=默认, 路径=图片）。会高亮对应缩略图并实时应用到窗口。</summary>
+    private void SelectBackground(string key)
+    {
+        if (CbAcrylicBlur.IsChecked == true && key != "default")
+            return;
+
+        _bgSelected = key;
+        SettingsManager.SetString("BgCurrent", key == "default" ? null : key);
+        BgThumbDefault.Classes.Set("selected", key == "default");
+        foreach (var child in BgThumbList.Children)
+        {
+            Border? img = null;
+            if (child is Border b && b != BgThumbDefault && b != BgThumbAdd)
+                img = b;
+            else if (child is Panel p && p.Children.Count > 0)
+                img = p.Children[0] as Border;
+            if (img != null)
+                img.Classes.Set("selected", img.Tag as string == key);
+        }
+
+        ApplySavedBackground();
+    }
+
+    private void ApplySavedBackground()
+    {
+        var key = _bgSelected;
+        if (key == "default" || string.IsNullOrEmpty(key) || !System.IO.File.Exists(key))
+        {
+            SetSukiBackgroundStyle(SukiBackgroundStyle.Bubble);
+            SetBackgroundImageSource(null, "");
+            ClearBackgroundBitmapCache(keepKey: null);
+            BgFullImage.IsVisible = false;
+            return;
+        }
+
+        SetSukiBackgroundStyle(SukiBackgroundStyle.Flat);
+        var blur = Math.Clamp(SettingsManager.GetInt("BgBlur", 0), 0, 20);
+        var cacheKey = BuildBackgroundCacheKey(key, blur);
+        SetBackgroundImageSource(GetOrCreateBackgroundBitmap(key, blur, cacheKey), cacheKey);
+        ClearBackgroundBitmapCache(keepKey: cacheKey);
+        BgFullImage.IsVisible = true;
+        ApplyBackgroundAdjustments();
+    }
+
+    private void SetBackgroundImageSource(IImage? source, string cacheKey)
+    {
+        var old = _backgroundImageSource;
+        var oldKey = _backgroundCacheKey;
+        if (ReferenceEquals(old, source))
+            return;
+
+        BgFullImage.Source = source;
+        _backgroundImageSource = source;
+        _backgroundCacheKey = cacheKey;
+
+        // 缓存内的背景图不能在切换时释放；非缓存旧图才直接 Dispose。
+        if (old is IDisposable disposable && (string.IsNullOrEmpty(oldKey) || !_backgroundBitmapCache.ContainsKey(oldKey)))
+            disposable.Dispose();
+    }
+
+    private string BuildBackgroundCacheKey(string path, int blur)
+    {
+        var lastWrite = System.IO.File.GetLastWriteTimeUtc(path).Ticks;
+        var targetWidth = GetBackgroundTargetWidth();
+        return $"{path}|{lastWrite}|w={targetWidth}|b={blur}";
+    }
+
+    private Avalonia.Media.Imaging.Bitmap GetOrCreateBackgroundBitmap(string path, int blur, string cacheKey)
+    {
+        if (_backgroundBitmapCache.TryGetValue(cacheKey, out var cached))
+            return cached;
+
+        var bitmap = LoadBackgroundBitmap(path, blur);
+        _backgroundBitmapCache[cacheKey] = bitmap;
+        return bitmap;
+    }
+
+    private void ClearBackgroundBitmapCache(string? keepKey)
+    {
+        foreach (var (key, bitmap) in _backgroundBitmapCache.ToList())
+        {
+            if (key == keepKey)
+                continue;
+            bitmap.Dispose();
+            _backgroundBitmapCache.Remove(key);
+        }
+    }
+
+    private int GetBackgroundTargetWidth()
+    {
+        var windowWidth = Bounds.Width > 0 ? Bounds.Width : 900;
+        // 限制背景处理尺寸，避免 2K/4K 图片在前台产生过大的 Skia/Avalonia/GPU 峰值。
+        return Math.Clamp((int)Math.Ceiling(windowWidth * 1.1), 900, 1440);
+    }
+
+    private Avalonia.Media.Imaging.Bitmap LoadBackgroundBitmap(string path, int blur)
+    {
+        var targetWidth = GetBackgroundTargetWidth();
+        if (blur <= 0)
+        {
+            using var fs = System.IO.File.OpenRead(path);
+            return Avalonia.Media.Imaging.Bitmap.DecodeToWidth(fs, targetWidth, Avalonia.Media.Imaging.BitmapInterpolationMode.HighQuality);
+        }
+
+        return LoadBlurredBackgroundBitmap(path, targetWidth, blur);
+    }
+
+    private static Avalonia.Media.Imaging.Bitmap LoadBlurredBackgroundBitmap(string path, int targetWidth, int blur)
+    {
+        using var codec = SKCodec.Create(path);
+        if (codec == null)
+            return new Avalonia.Media.Imaging.Bitmap(path);
+
+        var srcInfo = codec.Info;
+        var scale = targetWidth / (double)Math.Max(1, srcInfo.Width);
+        var targetHeight = Math.Max(1, (int)Math.Round(srcInfo.Height * scale));
+        var scaledSize = codec.GetScaledDimensions((float)Math.Min(1.0, scale));
+        if (scaledSize.Width <= 0 || scaledSize.Height <= 0)
+            scaledSize = new SKSizeI(targetWidth, targetHeight);
+
+        var decodeInfo = new SKImageInfo(scaledSize.Width, scaledSize.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
+        using var source = new SKBitmap(decodeInfo);
+        var result = codec.GetPixels(decodeInfo, source.GetPixels());
+        if (result is not SKCodecResult.Success and not SKCodecResult.IncompleteInput)
+            return new Avalonia.Media.Imaging.Bitmap(path);
+
+        var info = new SKImageInfo(targetWidth, targetHeight, SKColorType.Bgra8888, SKAlphaType.Premul);
+        using var surface = SKSurface.Create(info);
+        var canvas = surface.Canvas;
+        canvas.Clear(SKColors.Transparent);
+
+        using var paint = new SKPaint
+        {
+            IsAntialias = true,
+            ImageFilter = SKImageFilter.CreateBlur(blur, blur)
+        };
+        var sampling = new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear);
+        using var sourceImage = SKImage.FromBitmap(source);
+        canvas.DrawImage(sourceImage, new SKRect(0, 0, targetWidth, targetHeight), sampling, paint);
+        canvas.Flush();
+
+        using var image = surface.Snapshot();
+        using var data = image.Encode(SKEncodedImageFormat.Png, 85);
+        using var stream = data.AsStream();
+        return new Avalonia.Media.Imaging.Bitmap(stream);
+    }
+
+    private void ApplyBackgroundAdjustments()
+    {
+    }
+
+    private void SetSukiBackgroundStyle(SukiBackgroundStyle style)
+    {
+        if (BackgroundStyle != style)
+            BackgroundStyle = style;
+    }
+
+    private static readonly string BgFolder = System.IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "OppoPodsManager", "Background");
+
+    /// <summary>添加历史背景缩略图到列表（去重、复制到本地、最多保留 10 张）。</summary>
+    private void AddBgHistory(string filePath)
+    {
+        // 复制到本地 Background 文件夹，防止原文件被移动/删除
+        try
+        {
+            if (!System.IO.Directory.Exists(BgFolder))
+                System.IO.Directory.CreateDirectory(BgFolder);
+            var ext = System.IO.Path.GetExtension(filePath) ?? ".png";
+            var dest = System.IO.Path.Combine(BgFolder, $"{Guid.NewGuid():N}{ext}");
+            System.IO.File.Copy(filePath, dest, overwrite: true);
+            filePath = dest;
+        }
+        catch { /* 复制失败则仍用原路径 */ }
+
+        // 去重
+        _bgHistory.RemoveAll(p => p == filePath);
+        _bgHistory.Insert(0, filePath);
+        if (_bgHistory.Count > 10) _bgHistory.RemoveAt(_bgHistory.Count - 1);
+        RefreshBgThumbs();
+        SettingsManager.SetStringList("BgHistory", _bgHistory);
+        SelectBackground(filePath);
+    }
+
+    /// <summary>重建缩略图列表（默认 + 添加 + 历史）。</summary>
+    private void RefreshBgThumbs()
+    {
+        // 清除旧历史缩略图（保留默认和添加按钮）
+        for (int i = BgThumbList.Children.Count - 1; i >= 0; i--)
+        {
+            var c = BgThumbList.Children[i];
+            if ((c is Border b && (b == BgThumbDefault || b == BgThumbAdd)) || c == null)
+                continue;
+            BgThumbList.Children.RemoveAt(i);
+        }
+        foreach (var path in _bgHistory)
+        {
+            var img = new Border
+            {
+                Width = 90, Height = 60, CornerRadius = new Avalonia.CornerRadius(8),
+                Classes = { "bgThumb" }, Tag = path,
+            };
+            try
+            {
+                if (System.IO.File.Exists(path))
+                    img.Background = new Avalonia.Media.ImageBrush(GetOrCreateBackgroundThumb(path))
+                    {
+                        Stretch = Stretch.UniformToFill
+                    };
+                else
+                    img.Background = Avalonia.Media.Brushes.DimGray;
+            }
+            catch { img.Background = Avalonia.Media.Brushes.DimGray; }
+            img.PointerPressed += (_, _) => SelectBackground(path);
+
+            // 删除按钮（悬停时出现在右上角）
+            var delBtn = new Border
+            {
+                Width = 18, Height = 18, CornerRadius = new Avalonia.CornerRadius(9),
+                Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromRgb(200, 40, 40)),
+                IsVisible = false,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+                Margin = new Thickness(0, 2, 2, 0),
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+                Child = new TextBlock
+                {
+                    Text = "✕", FontSize = 10,
+                    Foreground = Avalonia.Media.Brushes.White,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                },
+            };
+            delBtn.PointerPressed += (_, e) =>
+            {
+                e.Handled = true; // 阻止点击穿透
+                _bgHistory.Remove(path);
+                RemoveBackgroundThumb(path);
+                // 清理本地文件
+                try { if (System.IO.File.Exists(path)) System.IO.File.Delete(path); } catch { }
+                SettingsManager.SetStringList("BgHistory", _bgHistory);
+                if (_bgSelected == path) SelectBackground("default");
+                RefreshBgThumbs();
+            };
+
+            var wrapper = new Panel { Width = 90, Height = 60, Cursor = img.Cursor };
+            wrapper.Children.Add(img);
+            wrapper.Children.Add(delBtn);
+            wrapper.PointerEntered += (_, _) => delBtn.IsVisible = true;
+            wrapper.PointerExited += (_, _) => delBtn.IsVisible = false;
+
+            BgThumbList.Children.Insert(BgThumbList.Children.Count - 0, wrapper);
+        }
+        SelectBackground(_bgSelected ?? "default");
+    }
+
+    private Avalonia.Media.Imaging.Bitmap GetOrCreateBackgroundThumb(string path)
+    {
+        var lastWrite = System.IO.File.GetLastWriteTimeUtc(path).Ticks;
+        var key = $"{path}|{lastWrite}|thumb=128";
+        if (_bgThumbCache.TryGetValue(key, out var cached))
+            return cached;
+
+        RemoveBackgroundThumb(path);
+        using var fs = System.IO.File.OpenRead(path);
+        var thumb = Avalonia.Media.Imaging.Bitmap.DecodeToWidth(fs, 128, Avalonia.Media.Imaging.BitmapInterpolationMode.HighQuality);
+        _bgThumbCache[key] = thumb;
+        return thumb;
+    }
+
+    private void RemoveBackgroundThumb(string path)
+    {
+        foreach (var (key, bitmap) in _bgThumbCache.ToList())
+        {
+            if (!key.StartsWith(path + "|", StringComparison.OrdinalIgnoreCase))
+                continue;
+            bitmap.Dispose();
+            _bgThumbCache.Remove(key);
+        }
+    }
+
+    private void ClearBackgroundThumbCache()
+    {
+        foreach (var bitmap in _bgThumbCache.Values)
+            bitmap.Dispose();
+        _bgThumbCache.Clear();
+    }
 
     private async void BtnFeedback_Click(object? s, RoutedEventArgs e)
     {
@@ -1519,22 +1885,15 @@ public partial class MainWindow : SukiWindow
 """;
 
             var desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-            // Linux 可能返回空，退回到用户主目录
-            if (string.IsNullOrEmpty(desktop))
-                desktop = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            if (string.IsNullOrEmpty(desktop))
-                desktop = Environment.CurrentDirectory;
-
             var fileName = $"OPPOPods_feedback_{date}.zip";
             var filePath = System.IO.Path.Combine(desktop, fileName);
 
-            // 打包所有历史日志 + 系统信息为 ZIP
             _logManager.ExportLogsAsZip(filePath, header);
 
             Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
 
             _ = Dispatcher.UIThread.InvokeAsync(async () =>
-                await ShowCheckResultDialog($"日志已打包导出到：{filePath}\n\n浏览器已打开反馈页面，请填写描述并上传该 ZIP 文件", "提交反馈"));
+                await ShowCheckResultDialog($"日志已打包导出到桌面：{fileName}\n\n浏览器已打开反馈页面，请填写描述并上传该 ZIP 文件", "提交反馈"));
         }
         catch (Exception ex)
         {
@@ -1553,181 +1912,36 @@ public partial class MainWindow : SukiWindow
     private string _eqCurrentPreset = "";
     private int _eqCurrentId; // 当前编辑的设备端预设 eqId，0=新建
     private bool _eqSuppressListEvent;
-    private bool _eqSuppressSliderEvent;
     private int _lastDeviceEqCount = -1;
-    private readonly Dictionary<int, Slider> _eqSliders = new();
-    private readonly Dictionary<int, TextBlock> _eqDbLabels = new();
-    private readonly Dictionary<int, TextBlock> _eqFrequencyLabels = new();
-    private readonly List<TextBlock> _eqScaleLabels = new();
     /// <summary>进入编辑时的滑块快照，用于重置。</summary>
     private double[] _eqBackupSliders = Array.Empty<double>();
-
-    private int[] GetCurrentEqFrequencies()
-    {
-        var capsFreqs = _pods.Caps.CustomEqFrequencies;
-        if (capsFreqs.Length > 0) return capsFreqs;
-
-        var deviceFreqs = _pods.State.DeviceEqEntries
-            .FirstOrDefault(e => e.Frequencies.Length > 0)?.Frequencies;
-        return deviceFreqs is { Length: > 0 }
-            ? deviceFreqs
-            : [62, 250, 1000, 4000, 8000, 16000];
-    }
-
-    private void BuildEqBandControls(int[] frequencies)
-    {
-        EqBandsPanel.Children.Clear();
-        _eqSliders.Clear();
-        _eqDbLabels.Clear();
-        _eqFrequencyLabels.Clear();
-        _eqScaleLabels.Clear();
-
-        if (frequencies.Length == 0) return;
-
-        var topScale = new TextBlock { Text = "+6", FontSize = 10, FontWeight = FontWeight.Medium, Foreground = BrushWhite, Opacity = 0.78, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top };
-        var midScale = new TextBlock { Text = " 0", FontSize = 10, FontWeight = FontWeight.Medium, Foreground = BrushWhite, Opacity = 0.68, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
-        var bottomScale = new TextBlock { Text = "-6", FontSize = 10, FontWeight = FontWeight.Medium, Foreground = BrushWhite, Opacity = 0.78, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom };
-        _eqScaleLabels.Add(topScale);
-        _eqScaleLabels.Add(midScale);
-        _eqScaleLabels.Add(bottomScale);
-
-        var scaleGrid = new Grid
-        {
-            Height = 180,
-            Margin = new Thickness(0, 0, 6, 0),
-            VerticalAlignment = VerticalAlignment.Center,
-            RowDefinitions = new RowDefinitions("Auto,*,Auto"),
-            Children =
-            {
-                topScale,
-                midScale,
-                bottomScale,
-            }
-        };
-        Grid.SetRow(scaleGrid.Children[1], 1);
-        Grid.SetRow(scaleGrid.Children[2], 2);
-        EqBandsPanel.Children.Add(scaleGrid);
-
-        foreach (var frequency in frequencies)
-        {
-            if (_eqSliders.ContainsKey(frequency)) continue;
-
-            var dbLabel = new TextBlock
-            {
-                Text = "0",
-                FontSize = 11,
-                FontWeight = FontWeight.SemiBold,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Foreground = BrushWhite,
-                Opacity = 0.95,
-                Margin = new Thickness(0, 0, 0, 2),
-            };
-            var slider = new Slider
-            {
-                Width = 36,
-                Height = 180,
-                Orientation = Orientation.Vertical,
-                Minimum = -6,
-                Maximum = 6,
-                Value = 0,
-                TickFrequency = 1,
-                IsSnapToTickEnabled = true,
-                Tag = frequency,
-            };
-            slider.PropertyChanged += EqSlider_Changed;
-
-            var frequencyLabel = new TextBlock
-            {
-                Text = FormatEqFrequency(frequency),
-                FontSize = 12,
-                FontWeight = FontWeight.SemiBold,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Foreground = BrushWhite,
-                Opacity = 0.98,
-                Margin = new Thickness(0, 2, 0, 0),
-            };
-
-            var band = new StackPanel
-            {
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                Children =
-                {
-                    dbLabel,
-                    slider,
-                    frequencyLabel,
-                }
-            };
-
-            _eqSliders[frequency] = slider;
-            _eqDbLabels[frequency] = dbLabel;
-            _eqFrequencyLabels[frequency] = frequencyLabel;
-            EqBandsPanel.Children.Add(band);
-        }
-        RefreshEqBandVisuals();
-    }
-
-    private static string FormatEqFrequency(int frequency)
-    {
-        if (frequency >= 1000 && frequency % 1000 == 0) return $"{frequency / 1000}k";
-        return frequency >= 1000 ? $"{frequency / 1000.0:0.#}k" : frequency.ToString();
-    }
-
-    private void UpdateEqDbLabel(int frequency, double value)
-    {
-        if (!_eqDbLabels.TryGetValue(frequency, out var label)) return;
-        var db = (int)Math.Round(value);
-        var sign = db > 0 ? "+" : "";
-        label.Text = $"{sign}{db}";
-        label.Foreground = db switch
-        {
-            > 0 => BrushLightGreen,
-            < 0 => BrushLightRed,
-            _ => BrushWhite,
-        };
-        label.Opacity = 0.95;
-    }
-
-    private void RefreshEqBandVisuals()
-    {
-        foreach (var label in _eqScaleLabels)
-        {
-            label.Foreground = BrushWhite;
-            label.Opacity = 0.78;
-        }
-        foreach (var label in _eqFrequencyLabels.Values)
-        {
-            label.Foreground = BrushWhite;
-            label.Opacity = 0.98;
-        }
-        foreach (var (frequency, slider) in _eqSliders)
-            UpdateEqDbLabel(frequency, slider.Value);
-    }
 
     /// <summary>滑块值变更 → 更新对应 dB 标签，触发防抖预览下发。</summary>
     private void EqSlider_Changed(object? s, Avalonia.AvaloniaPropertyChangedEventArgs e)
     {
         if (e.Property != Slider.ValueProperty) return;
         if (s is not Slider slider) return;
-        if (slider.Tag is not int frequency) return;
 
-        UpdateEqDbLabel(frequency, slider.Value);
-        if (_eqSuppressSliderEvent) return;
+        var db = (int)Math.Round(slider.Value);
+        var sign = db > 0 ? "+" : "";
+        var text = $"{sign}{db}";
 
-        // 防抖 150ms 后下发自定义 EQ（实时预览）
-        _eqDebounceTimer?.Stop();
-        _eqDebounceTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(150), DispatcherPriority.Background,
-            (_, _) =>
-            {
-                _eqDebounceTimer?.Stop();
-                SendCurrentCustomEq();
-            });
-        _eqDebounceTimer.Start();
+        if (slider == EqSlider62) EqDb62.Text = text;
+        else if (slider == EqSlider250) EqDb250.Text = text;
+        else if (slider == EqSlider1k) EqDb1k.Text = text;
+        else if (slider == EqSlider4k) EqDb4k.Text = text;
+        else if (slider == EqSlider8k) EqDb8k.Text = text;
+        else if (slider == EqSlider16k) EqDb16k.Text = text;
+
+        // 防抖 150ms 后下发自定义 EQ（实时预览）。复用同一个 DispatcherTimer，避免拖动滑块时反复创建 Timer/闭包。
+        var timer = EnsureEqDebounceTimer();
+        timer.Stop();
+        timer.Start();
     }
 
     // ---- 预设列表 ----
 
-    /// <summary>向 LogManager 追加一行日志。</summary>
+    /// <summary>向日志管理器追加一行。</summary>
     public void AppendLog(string tag, string msg)
     {
         _logManager.AppendLog(tag, msg);
@@ -1744,72 +1958,75 @@ public partial class MainWindow : SukiWindow
     /// <summary>刷新日志列表视图（支持简化版/完整版切换）。</summary>
     private void RefreshLogView()
     {
-        var lines = _logManager.GetRecentLines();
-        if (lines.Count == 0) return;
+        var lines = _logManager.GetRecentLines(out var version);
+        if (version == _renderedLogVersion && _renderedLogEntries.Count > 0)
+            return;
 
-        LbLog.Items.Clear();
+        var display = _logSimplified ? BuildSimplifiedLogLines(lines) : lines;
 
-        if (_logSimplified)
-        {
-            // 简化版：翻译 + 合并轮询
-            var entries = new List<string>();
-            foreach (var line in lines)
-            {
-                var t = TranslateLog(line);
-                if (t.Length > 0) entries.Add(t);
-            }
-
-            var merged = new List<string>();
-            var pollBuf = new List<string>();
-            string? pollTs = null;
-            void FlushPoll()
-            {
-                if (pollBuf.Count > 0)
-                {
-                    var summary = pollBuf.Count <= 2
-                        ? string.Join("，", pollBuf)
-                        : $"后台轮询发送（{string.Join("、", pollBuf.Distinct())}，共{pollBuf.Count}次）";
-                    merged.Add($"{pollTs}  {summary}");
-                    pollBuf.Clear();
-                    pollTs = null;
-                }
-            }
-            foreach (var entry in entries)
-            {
-                var ts = entry.Length >= 12 ? entry[..12].TrimEnd() : "";
-                var msg = entry.Length > 13 ? entry[14..] : entry;
-                if (_mergePatterns.Contains(msg))
-                {
-                    pollBuf.Add(msg);
-                    pollTs ??= ts;
-                }
-                else
-                {
-                    FlushPoll();
-                    merged.Add(entry);
-                }
-            }
-            FlushPoll();
-
-            foreach (var m in merged) LbLog.Items.Add(m);
-        }
-        else
-        {
-            // 完整版：原始行
-            foreach (var line in lines)
-                LbLog.Items.Add(line);
-        }
+        _renderedLogEntries.Clear();
+        foreach (var line in display)
+            _renderedLogEntries.Add(line);
+        _renderedLogVersion = version;
 
         // 自动跟随最新日志
-        if (_logAutoScroll && _logScrollViewer != null)
+        if (_logAutoScroll && _logScrollViewer != null && !_logScrollPending)
         {
+            _logScrollPending = true;
             Dispatcher.UIThread.Post(() =>
             {
+                _logScrollPending = false;
                 if (_logScrollViewer != null)
                     _logScrollViewer.Offset = new Vector(_logScrollViewer.Offset.X,
                         _logScrollViewer.Extent.Height);
             }, DispatcherPriority.Loaded);
         }
+    }
+
+    private static List<string> BuildSimplifiedLogLines(IEnumerable<string> lines)
+    {
+        var entries = new List<string>();
+        foreach (var line in lines)
+        {
+            var t = TranslateLog(line);
+            if (t.Length > 0)
+                entries.Add(t);
+        }
+
+        var merged = new List<string>();
+        var pollBuf = new List<string>();
+        string? pollTs = null;
+
+        void FlushPoll()
+        {
+            if (pollBuf.Count == 0)
+                return;
+
+            var summary = pollBuf.Count <= 2
+                ? string.Join("，", pollBuf)
+                : $"后台轮询发送（{string.Join("、", pollBuf.Distinct())}，共{pollBuf.Count}次）";
+            merged.Add($"{pollTs}  {summary}");
+            pollBuf.Clear();
+            pollTs = null;
+        }
+
+        foreach (var entry in entries)
+        {
+            var ts = entry.Length >= 12 ? entry[..12].TrimEnd() : "";
+            var msg = entry.Length > 13 ? entry[14..] : entry;
+            if (_mergePatterns.Contains(msg))
+            {
+                pollBuf.Add(msg);
+                pollTs ??= ts;
+            }
+            else
+            {
+                FlushPoll();
+                merged.Add(entry);
+            }
+        }
+        FlushPoll();
+        return merged;
     }
     /// 统一刷新主页调音下拉框 + EQ 面板预设列表（共用一套数据源）。
     /// 自动恢复当前选中项。
@@ -1826,7 +2043,7 @@ public partial class MainWindow : SukiWindow
         foreach (var kv in caps.EqPresets)
             CbEq.Items.Add(kv.Key);
         foreach (var e in _pods.State.DeviceEqEntries)
-            if (!string.IsNullOrWhiteSpace(e.Name) && !CbEq.Items.Contains(e.Name))
+            if (!string.IsNullOrEmpty(e.Name) && !CbEq.Items.Contains(e.Name))
                 CbEq.Items.Add(e.Name);
         // 恢复选中
         if (!string.IsNullOrEmpty(_eqCurrentPreset) && CbEq.Items.Contains(_eqCurrentPreset))
@@ -1847,7 +2064,7 @@ public partial class MainWindow : SukiWindow
         // 右：自定义
         foreach (var e in _pods.State.DeviceEqEntries)
         {
-            if (!string.IsNullOrWhiteSpace(e.Name) && !caps.EqPresets.ContainsKey(e.Name))
+            if (!string.IsNullOrEmpty(e.Name) && !caps.EqPresets.ContainsKey(e.Name))
                 LbEqCustomPresets.Items.Add(new EqPresetItem { Name = e.Name, IsCustom = false, EqId = e.EqId });
         }
 
@@ -1866,12 +2083,10 @@ public partial class MainWindow : SukiWindow
         LbEqCustomPresets.SelectionChanged += EqCustomPresets_Changed;
         _eqSuppressListEvent = false;
 
-        // 保存后重新获取当前预设的 eqId（优先按 _eqCurrentId 匹配，其次按名称）
+        // 保存后重新获取当前预设的 eqId
         if (!string.IsNullOrEmpty(_eqCurrentPreset))
         {
-            var entry = _eqCurrentId > 0
-                ? _pods.State.DeviceEqEntries.FirstOrDefault(e => e.EqId == _eqCurrentId)
-                : _pods.State.DeviceEqEntries.FirstOrDefault(e => e.Name == _eqCurrentPreset);
+            var entry = _pods.State.DeviceEqEntries.FirstOrDefault(e => e.Name == _eqCurrentPreset);
             if (entry != null) _eqCurrentId = entry.EqId;
         }
 
@@ -1915,19 +2130,6 @@ public partial class MainWindow : SukiWindow
     /// <summary>预设选中 → 内置发送切换、隐藏滑块；自定义/设备端展开编辑。</summary>
     private void ApplyEqSelection(EqPresetItem item, bool sendToDevice = true)
     {
-        // EQ ↔ 游戏音效互斥：选中非默认预设且游戏音效开启 → 先关游戏音效
-        if (_pods.IsConnected && _pods.Caps.GameSoundMutexEq
-            && item.Name != _pods.Caps.DefaultEqPreset
-            && CbGameSound.IsChecked == true)
-        {
-            Log.D("UI", $"EQ面板: 选中预设 {item.Name} 互斥游戏音效 → 关闭");
-            _featureUserSetAt = DateTime.Now;
-            SetGameSoundCheckedSilent(false);
-            CbSpatial.IsEnabled = true;
-            SetEqControlsEnabled(true);
-            _pods.SendGameSound(false);
-        }
-
         _eqCurrentPreset = item.Name;
 
         if (_pods.IsConnected && sendToDevice)
@@ -1950,21 +2152,18 @@ public partial class MainWindow : SukiWindow
 
         // 自定义/设备端预设：显示滑块编辑
         EqSliderCard.IsVisible = true;
-        // 尝试加载设备保存的增益值（优先按 eqId，其次按名称）
-        var entry = item.EqId > 0
-            ? _pods.State.DeviceEqEntries.FirstOrDefault(d => d.EqId == item.EqId)
-            : _pods.State.DeviceEqEntries.FirstOrDefault(d => d.Name == item.Name);
+        // 尝试加载设备保存的增益值
+        var entry = _pods.State.DeviceEqEntries.FirstOrDefault(d => d.Name == item.Name);
         if (entry is { Gains.Length: > 0, Frequencies.Length: > 0 })
         {
-            BuildEqBandControls(entry.Frequencies);
-            _eqSuppressSliderEvent = true;
+            var freqMap = new Dictionary<int, Slider>
+            {
+                { 62, EqSlider62 }, { 250, EqSlider250 }, { 1000, EqSlider1k },
+                { 4000, EqSlider4k }, { 8000, EqSlider8k }, { 16000, EqSlider16k },
+            };
             for (int i = 0; i < entry.Frequencies.Length; i++)
-                if (_eqSliders.TryGetValue(entry.Frequencies[i], out var sld))
-                {
+                if (freqMap.TryGetValue(entry.Frequencies[i], out var sld))
                     sld.Value = entry.Gains[i];
-                    UpdateEqDbLabel(entry.Frequencies[i], entry.Gains[i]);
-                }
-            _eqSuppressSliderEvent = false;
         }
         else SetAllEqSliders(0);
         SnapshotSliders();
@@ -2007,13 +2206,13 @@ public partial class MainWindow : SukiWindow
     }
 
     /// <summary>新建/保存后立即在自定义列表中追加并选中，不等设备响应。</summary>
-    private void AddCustomPresetToList(string name, byte eqId = 0)
+    private void AddCustomPresetToList(string name)
     {
-        // 避免重复——已有同名项则只更新 eqId 并选中（设备响应后刷新）
+        // 避免重复——已有同名项则只选中不追加
         foreach (var item in LbEqCustomPresets.Items.OfType<EqPresetItem>())
-            if (item.Name == name) { item.EqId = eqId; LbEqCustomPresets.SelectedItem = item; return; }
+            if (item.Name == name) { LbEqCustomPresets.SelectedItem = item; return; }
 
-        var newItem = new EqPresetItem { Name = name, IsCustom = true, EqId = eqId };
+        var newItem = new EqPresetItem { Name = name, IsCustom = true, EqId = 0 };
         _eqSuppressListEvent = true;
         LbEqBuiltinPresets.SelectedItem = null;
         LbEqCustomPresets.Items.Add(newItem);
@@ -2026,39 +2225,42 @@ public partial class MainWindow : SukiWindow
 
     private void SetAllEqSliders(double value)
     {
-        _eqSuppressSliderEvent = true;
-        foreach (var (frequency, slider) in _eqSliders)
-        {
-            slider.Value = value;
-            UpdateEqDbLabel(frequency, value);
-        }
-        _eqSuppressSliderEvent = false;
+        EqSlider62.Value = value;
+        EqSlider250.Value = value;
+        EqSlider1k.Value = value;
+        EqSlider4k.Value = value;
+        EqSlider8k.Value = value;
+        EqSlider16k.Value = value;
     }
 
-    /// <summary>将当前 UI 滑块值映射到设备频率数组。</summary>
+    /// <summary>将 6 段 UI 滑块值映射到设备频率数组，未对应 UI 的频段填 0。</summary>
     private int[] SliderToGains()
     {
-        var freqs = GetCurrentEqFrequencies();
-        if (_eqSliders.Count != freqs.Length || freqs.Any(f => !_eqSliders.ContainsKey(f)))
-            BuildEqBandControls(freqs);
-
+        var freqSliders = new Dictionary<int, double>
+        {
+            { 62, EqSlider62.Value },
+            { 250, EqSlider250.Value },
+            { 1000, EqSlider1k.Value },
+            { 4000, EqSlider4k.Value },
+            { 8000, EqSlider8k.Value },
+            { 16000, EqSlider16k.Value },
+        };
+        var freqs = _pods.Caps.CustomEqFrequencies;
+        // 如果能力表无频率，直接用 UI 硬编码的 6 段兜底
+        if (freqs.Length == 0) freqs = [62, 250, 1000, 4000, 8000, 16000];
         var gains = new int[freqs.Length];
         for (int i = 0; i < freqs.Length; i++)
-            gains[i] = _eqSliders.TryGetValue(freqs[i], out var sld) ? (int)Math.Round(sld.Value) : 0;
+            gains[i] = freqSliders.TryGetValue(freqs[i], out var v) ? (int)Math.Round(v) : 0;
         return gains;
     }
 
-    /// <summary>向设备发送当前 UI 滑块值作为自定义 EQ 实时预览。
-    /// 仅对已有预设（有 eqId）用 action=2 更新；新建预设在保存前不下发，避免设备重复建项。</summary>
+    /// <summary>向设备发送当前 UI 滑块值作为自定义 EQ 预览/更新。</summary>
     private void SendCurrentCustomEq()
     {
         if (!_pods.IsConnected || _pods.Caps.CustomEqFrequencies.Length == 0) return;
-        if (_eqCurrentId == 0 || string.IsNullOrEmpty(_eqCurrentPreset))
-        {
-            Log.D("UI", "EQ预览: 新建预设保存前不下发，避免设备重复建项");
-            return;
-        }
-        _pods.UpdateCustomEq((byte)_eqCurrentId, SliderToGains(), _eqCurrentPreset);
+        if (_eqCurrentId <= 0 || string.IsNullOrWhiteSpace(_eqCurrentPreset)) return;
+        var gains = SliderToGains();
+        _pods.UpdateCustomEq((byte)_eqCurrentId, gains, _eqCurrentPreset);
     }
 
     // ---- 按钮操作 ----
@@ -2084,7 +2286,6 @@ public partial class MainWindow : SukiWindow
         } while (true);
         _eqCurrentPreset = name;
         _eqCurrentId = 0;
-        BuildEqBandControls(GetCurrentEqFrequencies());
         SetAllEqSliders(0);
         SnapshotSliders();
         EqSliderCard.IsVisible = true;
@@ -2105,101 +2306,61 @@ public partial class MainWindow : SukiWindow
             EqHintText.Text = "名称仅支持中文/英文/数字，不含空格与特殊字符";
             return;
         }
-        var selectedEqId = (LbEqCustomPresets.SelectedItem as EqPresetItem)?.EqId ?? 0;
-        var saveEqId = selectedEqId > 0 ? selectedEqId : _eqCurrentId;
-        if (saveEqId > 0) _eqCurrentId = saveEqId;
-        Log.D("UI", $"EQ保存: name={_eqCurrentPreset} eqId={saveEqId}");
-        DoSaveEqPreset(_eqCurrentPreset, saveEqId);
+        Log.D("UI", $"EQ保存: name={_eqCurrentPreset} eqId={_eqCurrentId}");
+        // 编辑已有预设：先删旧再新建
+        if (_eqCurrentId != 0 && _pods.IsConnected)
+            _pods.DeleteEq(_eqCurrentId);
+        DoSaveEqPreset(_eqCurrentPreset, 0);
+        // 保存后重置 eqId，等设备响应后由 RefreshAllEqViews 重新赋值，避免同名取到旧 id
+        _eqCurrentId = 0;
         SnapshotSliders();
 
         // 立即添加到自定义列表并选中，不等设备异步响应
-        AddCustomPresetToList(_eqCurrentPreset, (byte)saveEqId);
+        AddCustomPresetToList(_eqCurrentPreset);
     }
 
     private void SnapshotSliders()
     {
-        _eqBackupSliders = GetCurrentEqFrequencies()
-            .Select(f => _eqSliders.TryGetValue(f, out var slider) ? slider.Value : 0)
-            .ToArray();
+        _eqBackupSliders = new[] { EqSlider62.Value, EqSlider250.Value, EqSlider1k.Value, EqSlider4k.Value, EqSlider8k.Value, EqSlider16k.Value };
     }
 
     private async void EqListItemDelete_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (s is not Button btn || btn.Tag is not int eqId) return;
-        // 从列表项取显示名称（仅用于确认对话框提示）
-        var listItem = btn.DataContext as EqPresetItem;
-        var displayName = listItem?.Name ?? $"eqId={eqId}";
+        if (s is not Button btn || btn.Tag is not string name) return;
+        if (!await ShowConfirmDialog("删除预设", $"确定要删除预设「{name}」吗？")) return;
 
-        if (!await ShowConfirmDialog("删除预设", $"确定要删除预设「{displayName}」吗？")) return;
-
-        if (eqId > 0)
+        // 仅设备端预设可删除，内置预设忽略
+        var devEntry = _pods.State.DeviceEqEntries.FirstOrDefault(ev => ev.Name == name);
+        if (devEntry != null)
         {
-            // 按 eqId 删除设备端条目
-            _pods.DeleteEq(eqId);
-            RemoveCustomEqLocally(eqId, displayName);
+            _pods.DeleteEq(devEntry.EqId);
+            // DeleteEq 内部会调 SendQueryEqAll，OnStateChanged 会自动刷新列表
         }
         else
         {
-            // eqId=0（新建后未同步的条目）：尝试按名称在设备端查找
-            var removedEqId = 0;
-            if (!string.IsNullOrEmpty(displayName))
-            {
-                var devEntry = _pods.State.DeviceEqEntries.FirstOrDefault(ev => ev.Name == displayName);
-                if (devEntry != null)
-                {
-                    removedEqId = devEntry.EqId;
-                    _pods.DeleteEq(devEntry.EqId);
-                }
-                else
-                {
-                    Log.D("UI", $"EQ面板: 预设「{displayName}」设备端不存在，仅从列表移除");
-                }
-            }
-            RemoveCustomEqLocally(removedEqId, displayName);
+            Log.D("UI", $"EQ面板: 内置预设「{name}」不可删除，已忽略");
+            return;
         }
 
-        if (_eqCurrentPreset == displayName)
+        if (_eqCurrentPreset == name)
         {
             _eqCurrentPreset = "";
             SetAllEqSliders(0);
         }
-        EqHintText.Text = $"「{displayName}」已删除";
-    }
-
-    private void RemoveCustomEqLocally(int eqId, string displayName)
-    {
-        // 本机 SPP 设备的 0x8122 不回读权威列表（常返回空），删除必须乐观更新本地状态，
-        // 否则后续 OnStateChanged → RefreshAllEqViews 会从未更新的 DeviceEqEntries 把已删项重建出来。
-        _pods.State.DeviceEqEntries = _pods.State.DeviceEqEntries
-            .Where(e => eqId > 0 ? e.EqId != eqId : e.Name != displayName)
-            .ToList();
-
-        var item = LbEqCustomPresets.Items.OfType<EqPresetItem>()
-            .FirstOrDefault(e => eqId > 0 ? e.EqId == eqId : e.Name == displayName);
-        if (item != null)
-            LbEqCustomPresets.Items.Remove(item);
-
-        if (CbEq.Items.Contains(displayName))
-            CbEq.Items.Remove(displayName);
+        EqHintText.Text = $"「{name}」已删除";
     }
 
     private void DoSaveEqPreset(string name, int eqId = 0)
     {
         _eqCurrentPreset = name;
         if (_pods.IsConnected)
-        {
-            // 已有预设 → action=2 更新；新预设 → action=1 新建（APK: B8.c.i action 2 vs 1）
-            if (eqId > 0)
-                _pods.UpdateCustomEq((byte)eqId, SliderToGains(), name);
-            else
-                _pods.SendCustomEq(SliderToGains(), name);
-        }
+            _pods.SendCustomEq(SliderToGains(), name);
         EqHintText.Text = $"已保存「{name}」到设备";
     }
 
     // ---- 设备详情 ----
 
-    /// <summary>刷新设备详情页（固件、编解码器）。</summary>
+    /// <summary>刷新设备详情页（固件、编解码器、音效增强）。</summary>
     private void RefreshDeviceInfo()
     {
         var caps = _modelOverride != null
@@ -2209,6 +2370,29 @@ public partial class MainWindow : SukiWindow
         DiDeviceName.Text = caps.ModelName;
         DiFirmware.Text = FormatFirmware(_pods.State.FirmwareVersion);
         DiCodec.Text = OppoProtocol.CodecName(_pods.State.CodecType);
+
+        // 音效增强互斥组
+        bool showSpatial = caps.HasSpatialSound;
+        bool showGame = caps.HasGameSound;
+        bool showEq = caps.EqPresets.Count > 0;
+        bool hasMutex = caps.GameSoundMutexes.Count > 0;
+
+        DiEnhanceNone.IsVisible = hasMutex;
+        DiEnhanceSpatial.IsVisible = showSpatial && hasMutex;
+        DiEnhanceGame.IsVisible = showGame && hasMutex;
+        DiEnhanceEq.IsVisible = showEq && hasMutex;
+        DiEnhanceHint.Text = hasMutex
+            ? "以下音效互斥，同一时间只能启用一个"
+            : "当前设备不支持音效互斥";
+
+        // 刷新选中态
+        _diEnhanceSuppress = true;
+        var current = _pods.CurrentEnhancement();
+        DiEnhanceNone.IsChecked = current == AudioEnhancement.None;
+        DiEnhanceSpatial.IsChecked = current == AudioEnhancement.SpatialSound;
+        DiEnhanceGame.IsChecked = current == AudioEnhancement.GameSound;
+        DiEnhanceEq.IsChecked = current == AudioEnhancement.Eq;
+        _diEnhanceSuppress = false;
     }
 
     /// <summary>固件版本 CSV → 显示格式：138.138.105。</summary>
@@ -2227,6 +2411,23 @@ public partial class MainWindow : SukiWindow
         // 按设备类型排序输出
         var ordered = versions.OrderBy(kv => kv.Key).Select(kv => kv.Value);
         return string.Join(".", ordered);
+    }
+
+    private bool _diEnhanceSuppress;
+    private void DiEnhance_Changed(object? s, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_diEnhanceSuppress || !_pods.IsConnected) return;
+        if (s is not RadioButton rb || rb.IsChecked != true) return;
+
+        AudioEnhancement mode;
+        if (rb == DiEnhanceNone) mode = AudioEnhancement.None;
+        else if (rb == DiEnhanceSpatial) mode = AudioEnhancement.SpatialSound;
+        else if (rb == DiEnhanceGame) mode = AudioEnhancement.GameSound;
+        else if (rb == DiEnhanceEq) mode = AudioEnhancement.Eq;
+        else return;
+
+        Log.D("UI", $"音效增强切换 -> {mode}");
+        _pods.SetAudioEnhancement(mode);
     }
 
     // ---- 浮层对话框（Avalonia 原生遮罩，不创建新窗口）----
@@ -2347,10 +2548,12 @@ public partial class MainWindow : SukiWindow
         // 真正退出（QuitApplication 已设 _realClose）→ 放行
         if (_realClose) return;
 
-        // 托盘已启用 → 隐藏而非关闭
-        if (CbTray.IsChecked == true)
+        // 托盘已启用 → 隐藏而非关闭。这里读持久化配置，避免控件状态初始化/同步异常导致设置失效。
+        if (SettingsManager.GetBool("TrayEnabled", false))
         {
             e.Cancel = true;
+            _logRefreshTimer?.Stop();
+            ShowInTaskbar = false;
             Hide();
             return;
         }
@@ -2366,17 +2569,55 @@ public partial class MainWindow : SukiWindow
     private void QuitApplication()
     {
         _realClose = true;
-        _sessionCts?.Cancel();
+        _pollCts?.Cancel();
+        DisposeRuntimeUiResources();
         _pods.Dispose();
         if (_trayIcon != null) _trayIcon.IsVisible = false;
         Environment.Exit(0);
     }
 
+    private void DisposeRuntimeUiResources()
+    {
+        _eqDebounceTimer?.Stop();
+        _bgApplyDebounceTimer?.Stop();
+        _logRefreshTimer?.Stop();
+        _logManager.Dispose();
+        _trayClickTimer?.Stop();
+        SetBackgroundImageSource(null, "");
+        ClearBackgroundBitmapCache(keepKey: null);
+        ClearBackgroundThumbCache();
+        _smallWindow?.Close();
+    }
+
     // ===== 设备列表 =====
     // 记录上次渲染的列表签名：SyncMultiDeviceList 会被每次 StateChanged（含电量/ANC 轮询，约2s一次）触发，
-    // 若每次都 Clear+重建，正打开的右键菜单会因宿主 Border 被销毁而闪退（"稍微移动就消失"的真因）。
-    // 仅当设备列表数据真正变化时才重建，让菜单在轮询期间保持打开。
+    // 若每次都 Clear+重建，正打开的右键菜单会因宿主 Border 被销毁而闪退，并让 Avalonia 样式/视觉对象持续堆积。
+    // 签名只保留设备行结构与菜单结构字段；音频活动等高频字段不再触发整树重建。
     private string _deviceListSignature = "";
+    private bool _deviceListUpdatePending;
+    private readonly Dictionary<string, DeviceListRowRefs> _deviceListRows = new();
+
+    private sealed class DeviceListRowRefs
+    {
+        public required Border Root { get; init; }
+        public required Ellipse Dot { get; init; }
+        public required TextBlock NameText { get; init; }
+        public required TextBlock AudioText { get; init; }
+        public required TextBlock StatusText { get; init; }
+    }
+
+    private void RequestSyncMultiDeviceList()
+    {
+        if (_deviceListUpdatePending)
+            return;
+
+        _deviceListUpdatePending = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _deviceListUpdatePending = false;
+            SyncMultiDeviceList();
+        });
+    }
 
     private void SyncMultiDeviceList()
     {
@@ -2398,15 +2639,23 @@ public partial class MainWindow : SukiWindow
             });
         }
 
-        // 计算列表签名（含影响渲染与菜单的所有字段 + 能力 + 连接态）
+        // 计算列表签名。只包含影响行数量/菜单可用性的结构字段，避免音频活动等高频状态导致整棵 UI 树反复 Clear+new。
         var sig = string.Join("|", all.Select(d =>
-            $"{d.Address};{d.DeviceName};{d.ConnectionState};{d.IsCurrentDevice};{d.IsAudioActive};{d.IsMainAudioDevice}"))
+            $"{d.Address};{d.DeviceName};{d.ConnectionState};{d.IsCurrentDevice}"))
             + $"##manage={canManage};auto={_pods.State.MultiConnectAutoMode};conn={_pods.State.Connected}";
         if (sig == _deviceListSignature && DeviceList.Items.Count > 0)
-            return;   // 数据未变，跳过重建，保住已打开的菜单
+        {
+            UpdateDeviceListRows(all);
+            UpdateDeviceListStatus(all);
+            return;   // 结构未变，只更新文字/颜色状态，保住已打开的菜单和已创建的视觉树
+        }
         _deviceListSignature = sig;
+        Log.D("UI", "SyncMultiDeviceList: 渲染 " + all.Count + " 个设备: " + string.Join(", ", all.Select(d => $"{d.DeviceName}/{d.Address}/{d.ConnectionState}/cur={d.IsCurrentDevice}")));
 
+        foreach (var item in DeviceList.Items.OfType<Control>())
+            item.ContextMenu = null;
         DeviceList.Items.Clear();
+        _deviceListRows.Clear();
 
         // 自动模式提示
         if (canManage && _pods.State.MultiConnectAutoMode && all.Count > 1)
@@ -2430,44 +2679,58 @@ public partial class MainWindow : SukiWindow
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Fill = dotColor };
 
             // 设备名
-            var nameTb = new TextBlock { Text = d.DeviceName, FontSize = 12,
-                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-            if (d.IsCurrentDevice)
-                nameTb.Foreground = BrushLightGreen;
+            var nameTb = new TextBlock
+            {
+                Text = d.DeviceName,
+                FontSize = 12,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxWidth = 112,
+                Foreground = d.IsCurrentDevice ? BrushLightGreen : BrushWhite
+            };
 
             var row = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Margin = new Thickness(4, 3) };
             row.Children.Add(dot);
             row.Children.Add(nameTb);
 
-            // 音频活动指示
-            if (d.IsAudioActive && !d.IsCurrentDevice)
+            // 音频活动指示。始终保留控件，后续状态变化只改文本/可见性，避免高频重建视觉树。
+            var audioHint = new TextBlock
             {
-                var audioHint = new TextBlock { Text = " ♪", FontSize = 11, Opacity = 0.6,
-                    Foreground = BrushGreen, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-                row.Children.Add(audioHint);
-            }
-            if (d.IsCurrentDevice)
-            {
-                var note = new TextBlock { Text = d.IsAudioActive ? "  ♪" : "", FontSize = 11, Opacity = 0.5,
-                    Foreground = BrushLightGreen, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-                row.Children.Add(note);
-            }
+                Text = GetDeviceAudioText(d),
+                FontSize = 11,
+                Opacity = d.IsCurrentDevice ? 0.5 : 0.6,
+                Foreground = d.IsCurrentDevice ? BrushLightGreen : BrushGreen,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                IsVisible = d.IsAudioActive
+            };
+            row.Children.Add(audioHint);
 
-            // 连接状态文字
-            if (d.ConnectionState != 2 && !d.IsCurrentDevice)
+            // 连接状态文字。始终保留控件，状态变化只切换可见性。
+            var status = new TextBlock
             {
-                var status = new TextBlock { Text = $" ({d.ConnectionStatus})", FontSize = 10, Opacity = 0.4,
-                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-                row.Children.Add(status);
-            }
+                Text = GetDeviceConnectionText(d),
+                FontSize = 10,
+                Opacity = 0.4,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                IsVisible = d.ConnectionState != 2 && !d.IsCurrentDevice
+            };
+            row.Children.Add(status);
 
             var border = new Border { Padding = new Thickness(8, 5), CornerRadius = new CornerRadius(4), Child = row };
             if (d.IsCurrentDevice)
-                border.Background = new SolidColorBrush(Color.FromArgb(0x12, 0x4C, 0xAF, 0x50));
+                border.Background = _deviceCurrentBgBrush;
+
+            _deviceListRows[GetDeviceListRowKey(d)] = new DeviceListRowRefs
+            {
+                Root = border,
+                Dot = dot,
+                NameText = nameTb,
+                AudioText = audioHint,
+                StatusText = status
+            };
 
             // 右键菜单 / 左键操作
             var menu = new ContextMenu();
-            // isReal：有真实 MAC 的列表项（"current" 是无多连接列表时的型号占位，不能下发操作）
             var isReal = !string.IsNullOrEmpty(d.Address) && d.Address != "current";
 
             if (isReal && !d.IsCurrentDevice)
@@ -2499,17 +2762,6 @@ public partial class MainWindow : SukiWindow
                 unpair.Click += (_, _) => _pods.SendMultiConnectUnpair(d.Address);
                 menu.Items.Add(unpair);
             }
-            else if (isReal && d.IsCurrentDevice)
-            {
-                // 当前设备（本机）也可调整：把音频主通道切回本机（当音频正在别的设备上时有用）。
-                // 依据 melody：当前设备走的是设为优先设备，不提供断开/解绑（不能把自己踢掉）。
-                if (canManage && !d.IsAudioActive)
-                {
-                    var setPri = new MenuItem { Header = "切换音频到本机" };
-                    setPri.Click += (_, _) => _pods.SendMultiConnectSetPriority(d.Address);
-                    menu.Items.Add(setPri);
-                }
-            }
 
             if (menu.Items.Count > 0)
             {
@@ -2521,16 +2773,7 @@ public partial class MainWindow : SukiWindow
                 {
                     var pt = e.GetCurrentPoint(border);
                     if (!pt.Properties.IsLeftButtonPressed) return;
-                    if (d.IsCurrentDevice)
-                    {
-                        // 当前设备（本机）：仅在支持管理且音频不在本机时，把音频切回本机
-                        if (canManage && !d.IsAudioActive)
-                        {
-                            Log.D("UI", $"切换音频到本机 -> {d.DeviceName} ({d.Address})");
-                            _pods.SendMultiConnectSetPriority(d.Address);
-                        }
-                    }
-                    else if (d.ConnectionState == 2)
+                    if (d.ConnectionState == 2)
                     {
                         if (canManage)
                         {
@@ -2554,7 +2797,42 @@ public partial class MainWindow : SukiWindow
             DeviceList.Items.Add(border);
         }
 
-        // 更新状态栏
+        UpdateDeviceListStatus(all);
+    }
+
+    private static string GetDeviceListRowKey(ConnectedDeviceInfo d)
+        => string.IsNullOrEmpty(d.Address) ? d.DeviceName : d.Address;
+
+    private static string GetDeviceAudioText(ConnectedDeviceInfo d)
+        => d.IsCurrentDevice ? "  ♪" : " ♪";
+
+    private static string GetDeviceConnectionText(ConnectedDeviceInfo d)
+        => $" ({d.ConnectionStatus})";
+
+    private void UpdateDeviceListRows(IReadOnlyList<ConnectedDeviceInfo> all)
+    {
+        foreach (var d in all)
+        {
+            if (!_deviceListRows.TryGetValue(GetDeviceListRowKey(d), out var row))
+                continue;
+
+            row.Dot.Fill = d.ConnectionState switch { 2 => BrushGreen, 1 => BrushGray, _ => BrushRed };
+            row.NameText.Text = d.DeviceName;
+            row.NameText.Foreground = d.IsCurrentDevice ? BrushLightGreen : BrushWhite;
+            row.Root.Background = d.IsCurrentDevice
+                ? _deviceCurrentBgBrush
+                : null;
+            row.AudioText.Text = GetDeviceAudioText(d);
+            row.AudioText.Opacity = d.IsCurrentDevice ? 0.5 : 0.6;
+            row.AudioText.Foreground = d.IsCurrentDevice ? BrushLightGreen : BrushGreen;
+            row.AudioText.IsVisible = d.IsAudioActive;
+            row.StatusText.Text = GetDeviceConnectionText(d);
+            row.StatusText.IsVisible = d.ConnectionState != 2 && !d.IsCurrentDevice;
+        }
+    }
+
+    private void UpdateDeviceListStatus(IReadOnlyList<ConnectedDeviceInfo> all)
+    {
         var current = all.FirstOrDefault(d => d.IsCurrentDevice);
         StatusText.Text = current != null
             ? $"已连接 — {current.DeviceName}"
@@ -2566,10 +2844,9 @@ public partial class MainWindow : SukiWindow
 
     private void ShowFromTray()
     {
-        // 静默启动时曾关闭任务栏显示，用户主动打开时恢复
         ShowInTaskbar = true;
-        Show();
         WindowState = WindowState.Normal;
+        Show();
         Activate();
     }
 
@@ -2687,9 +2964,7 @@ public partial class MainWindow : SukiWindow
     private void ShowBigWindow()
     {
         _trayClickTimer = null;
-        Show();
-        WindowState = WindowState.Normal;
-        Activate();
+        ShowFromTray();
     }
 
     /// <summary>按当前连接状态与设备能力重建托盘右键菜单（NativeMenu 原生菜单）。</summary>
@@ -2700,6 +2975,12 @@ public partial class MainWindow : SukiWindow
         var caps = _modelOverride != null
             ? DeviceCapabilities.ForceModel(_modelOverride)
             : _pods.Caps;
+
+        var signature = BuildTrayMenuSignature(s, caps);
+        if (_trayIcon.Menu != null && signature == _trayMenuSignature)
+            return;
+        _trayMenuSignature = signature;
+
         var menu = new NativeMenu();
         _trayAncMap.Clear();
 
@@ -2766,6 +3047,27 @@ public partial class MainWindow : SukiWindow
         _trayIcon.Menu = menu;
     }
 
+    private string BuildTrayMenuSignature(PodState s, DeviceCapabilities caps)
+    {
+        var ancSignature = string.Join("|", caps.AncOptions.Select(opt =>
+            opt.Children.Count > 0
+                ? $"{opt.Key}>" + string.Join(",", opt.Children.Select(c => $"{c.Key}:{c.Label}"))
+                : $"{opt.Key}:{opt.Label}"));
+        return string.Join(";",
+            s.Connected,
+            caps.ModelId,
+            caps.ModelName,
+            caps.HasGameMode,
+            caps.HasSpatialSound,
+            caps.HasDualDevice,
+            s.GameMode,
+            s.SpatialSound,
+            s.DualDevice,
+            _ancMain,
+            _ancLevel,
+            ancSignature);
+    }
+
     /// <summary>托盘 ANC 菜单项点击：从字典查键，避免闭包捕获问题。</summary>
     private void TrayAncItem_Click(object? sender, EventArgs e)
     {
@@ -2788,7 +3090,7 @@ public partial class MainWindow : SukiWindow
         RebuildTrayMenu();
     }
 
-    private void SyncUi() => Dispatcher.UIThread.Post(() => OnStateChanged());
+    private void SyncUi() => OnStateChanged();
 
     private void SpatialAudio_Init()
     {
@@ -2884,35 +3186,6 @@ public partial class MainWindow : SukiWindow
         }
     }
 
-    private async void BtnTestBattery_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        var state = new PodState();
-        state.Battery["L"] = (12, false);
-        state.Battery["R"] = (15, false);
-        state.Battery["C"] = (30, false);
-        // 模拟首次连接：单次弹出电量弹窗
-        await ToastWindow.ShowAsync(state, GetDeviceDisplayName(), ToastType.Battery, GetToastDuration());
-    }
-
-    private async void BtnTestToast_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        var name = GetDeviceDisplayName();
-        // 构造假电量数据供测试
-        var state = new PodState();
-        state.Battery["L"] = (85, false);
-        state.Battery["R"] = (72, true);
-        state.Battery["C"] = (90, false);
-
-        // 依次展示 4 种 Toast 类型，每次间隔 2 秒
-        await ToastWindow.ShowAsync(state, name, ToastType.Battery, 2000);
-        await Task.Delay(500);
-        await ToastWindow.ShowAsync(state, name, ToastType.LowBattery, 2000);
-        await Task.Delay(500);
-        await ToastWindow.ShowAsync(state, name, ToastType.CriticalBattery, 2000);
-        await Task.Delay(500);
-        await ToastWindow.ShowAsync(null, name, ToastType.Disconnected, 2000);
-    }
-
     private void BtnViewLog_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
     {
         RefreshLogView();
@@ -2995,6 +3268,7 @@ public partial class MainWindow : SukiWindow
     {
         _logSimplified = !_logSimplified;
         BtnLogToggle.Content = _logSimplified ? "简化版" : "完整版";
+        _renderedLogVersion = -1;
         RefreshLogView();
     }
 
@@ -3299,11 +3573,11 @@ public partial class MainWindow : SukiWindow
 internal sealed class LogTraceListener : TraceListener
 {
     private readonly Util.LogManager _logManager;
-    public LogTraceListener(Util.LogManager mgr) => _logManager = mgr;
+    public LogTraceListener(Util.LogManager logManager) => _logManager = logManager;
     public override void Write(string? message) { }
     public override void WriteLine(string? message)
     {
         if (message != null)
-            _logManager.AppendLog("TRACE", message);
+            _logManager.AppendRawLine(message);
     }
 }

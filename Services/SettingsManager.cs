@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -7,57 +8,119 @@ using System.Text.Json.Serialization;
 namespace OppoPodsManager;
 
 [JsonSerializable(typeof(Dictionary<string, string>))]
+[JsonSerializable(typeof(List<string>))]
 internal partial class AppSettingsContext : JsonSerializerContext { }
 
-/// <summary>JSON 文件持久化设置存储</summary>
+/// <summary>JSON 文件持久化设置存储。</summary>
 public static class SettingsManager
 {
-    private static readonly string FilePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "OppoPodsManager", "settings.json");
-    private static readonly string OldFilePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "OppoPodsWin", "settings.json");
+    private static readonly string RoamingDir = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+    private static readonly string LocalDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+    private static readonly string FilePath = Path.Combine(RoamingDir, "OppoPodsManager", "settings.json");
+
+    private static readonly string[] LegacyFilePaths =
+    {
+        Path.Combine(RoamingDir, "OppoPodsWin", "settings.json"),
+        Path.Combine(RoamingDir, "OPPO Pods For Windows", "settings.json"),
+        Path.Combine(RoamingDir, "OppoPodsForWindows", "settings.json"),
+        Path.Combine(LocalDir, "OppoPodsManager", "settings.json"),
+        Path.Combine(LocalDir, "OppoPodsWin", "settings.json"),
+        Path.Combine(LocalDir, "OPPO Pods For Windows", "settings.json"),
+        Path.Combine(LocalDir, "OppoPodsForWindows", "settings.json")
+    };
 
     private static Dictionary<string, string> _cache = new();
+    private static bool _loaded;
     private static DateTime _lastRead = DateTime.MinValue;
     private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(5);
 
     private static Dictionary<string, string> Load()
     {
-        if (DateTime.Now - _lastRead < CacheDuration && _cache.Count > 0)
+        if (_loaded && DateTime.Now - _lastRead < CacheDuration)
             return _cache;
+
+        foreach (var path in EnumerateConfigPaths())
+        {
+            if (!File.Exists(path))
+                continue;
+
+            try
+            {
+                var json = File.ReadAllText(path);
+                var loaded = ParseSettings(json);
+                if (loaded.Count == 0 && !string.IsNullOrWhiteSpace(json))
+                    Log.D("CFG", $"Load: {path} 未读到有效配置项");
+
+                _cache = loaded;
+                _loaded = true;
+                _lastRead = DateTime.Now;
+                Log.D("CFG", $"Load: 从 {path} 读取 {_cache.Count} 项");
+
+                if (!Path.GetFullPath(path).Equals(Path.GetFullPath(FilePath), StringComparison.OrdinalIgnoreCase))
+                    Save();
+
+                return _cache;
+            }
+            catch (Exception ex)
+            {
+                Log.Ex("CFG", $"Load {path}", ex);
+            }
+        }
+
+        _cache = new Dictionary<string, string>();
+        _loaded = true;
+        _lastRead = DateTime.Now;
+        Log.D("CFG", $"Load: 未找到可用配置文件，使用空配置 {FilePath}");
+        return _cache;
+    }
+
+    private static IEnumerable<string> EnumerateConfigPaths()
+    {
+        yield return FilePath;
+        foreach (var path in LegacyFilePaths)
+            yield return path;
+    }
+
+    private static Dictionary<string, string> ParseSettings(string json)
+    {
         try
         {
-            // 迁移旧配置：OppoPodsWin → OppoPodsManager
-            if (!File.Exists(FilePath) && File.Exists(OldFilePath))
-            {
-                var dir = Path.GetDirectoryName(FilePath);
-                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                    Directory.CreateDirectory(dir);
-                File.Copy(OldFilePath, FilePath);
-                Log.D("CFG", $"Migrate: {OldFilePath} → {FilePath}");
-            }
-
-            if (File.Exists(FilePath))
-            {
-                var json = File.ReadAllText(FilePath);
-                _cache = JsonSerializer.Deserialize(json, AppSettingsContext.Default.DictionaryStringString) ?? new();
-                Log.D("CFG", $"Load: 从 {FilePath} 读取 {_cache.Count} 项");
-            }
-            else
-            {
-                _cache = new Dictionary<string, string>();
-                Log.D("CFG", $"Load: 配置文件不存在 {FilePath},使用空配置");
-            }
+            var strict = JsonSerializer.Deserialize(json, AppSettingsContext.Default.DictionaryStringString);
+            if (strict != null)
+                return strict;
         }
-        catch (Exception ex)
+        catch
         {
-            Log.Ex("CFG", "Load", ex);
-            _cache = new Dictionary<string, string>();
+            // 继续走兼容解析，支持旧版本写入的 bool/int/array 等 JSON 值。
         }
-        _lastRead = DateTime.Now;
-        return _cache;
+
+        var result = new Dictionary<string, string>();
+        using var doc = JsonDocument.Parse(json);
+        if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            return result;
+
+        foreach (var property in doc.RootElement.EnumerateObject())
+        {
+            var value = ConvertJsonElementToString(property.Value);
+            if (value != null)
+                result[property.Name] = value;
+        }
+
+        return result;
+    }
+
+    private static string? ConvertJsonElementToString(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number => element.GetRawText(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            JsonValueKind.Array or JsonValueKind.Object => element.GetRawText(),
+            _ => null
+        };
     }
 
     private static void Save()
@@ -67,10 +130,22 @@ public static class SettingsManager
             var dir = Path.GetDirectoryName(FilePath);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(_cache, AppSettingsContext.Default.DictionaryStringString));
+
+            var json = JsonSerializer.Serialize(_cache, AppSettingsContext.Default.DictionaryStringString);
+            var tmp = FilePath + ".tmp";
+            File.WriteAllText(tmp, json);
+
+            if (File.Exists(FilePath))
+                File.Replace(tmp, FilePath, null);
+            else
+                File.Move(tmp, FilePath);
+
             Log.D("CFG", $"Save: 写入 {_cache.Count} 项 -> {FilePath}");
         }
-        catch (Exception ex) { Log.Ex("CFG", "Save", ex); }
+        catch (Exception ex)
+        {
+            Log.Ex("CFG", "Save", ex);
+        }
     }
 
     public static string? GetString(string key, string? defaultValue = null)
@@ -92,7 +167,12 @@ public static class SettingsManager
     public static bool GetBool(string key, bool defaultValue = false)
     {
         var val = GetString(key);
-        return val switch { "1" or "true" => true, "0" or "false" => false, _ => defaultValue };
+        return val?.Trim().ToLowerInvariant() switch
+        {
+            "1" or "true" or "yes" or "on" => true,
+            "0" or "false" or "no" or "off" => false,
+            _ => defaultValue
+        };
     }
 
     public static void SetBool(string key, bool value) =>
@@ -101,9 +181,23 @@ public static class SettingsManager
     public static int GetInt(string key, int defaultValue = 0)
     {
         var val = GetString(key);
-        return int.TryParse(val, out var n) ? n : defaultValue;
+        return int.TryParse(val, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : defaultValue;
     }
 
     public static void SetInt(string key, int value) =>
-        SetString(key, value.ToString());
+        SetString(key, value.ToString(CultureInfo.InvariantCulture));
+
+    public static List<string>? GetStringList(string key)
+    {
+        var val = GetString(key);
+        if (string.IsNullOrEmpty(val)) return null;
+        try { return JsonSerializer.Deserialize(val, AppSettingsContext.Default.ListString); }
+        catch { return null; }
+    }
+
+    public static void SetStringList(string key, List<string> value)
+    {
+        var json = JsonSerializer.Serialize(value, AppSettingsContext.Default.ListString);
+        SetString(key, json);
+    }
 }

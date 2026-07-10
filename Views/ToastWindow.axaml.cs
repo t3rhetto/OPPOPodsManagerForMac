@@ -12,6 +12,13 @@ public enum ToastType { Battery, LowBattery, CriticalBattery, Disconnected }
 
 public partial class ToastWindow : Window
 {
+    private static readonly TransformOperations EnterTransform = TransformOperations.Parse("translateX(0px)");
+    private static readonly TransformOperations ExitTransform = TransformOperations.Parse("translateX(28px)");
+    private static readonly SolidColorBrush LightCardBrush = new(Color.FromRgb(0xF5, 0xF5, 0xF5));
+    private static readonly SolidColorBrush LightBorderBrush = new(Color.FromArgb(0x15, 0x00, 0x00, 0x00));
+    private static readonly SolidColorBrush LightTextBrush = new(Color.FromRgb(0x22, 0x22, 0x22));
+    private static readonly SolidColorBrush LightMutedTextBrush = new(Color.FromRgb(0x66, 0x66, 0x66));
+    private static readonly SolidColorBrush LightCriticalTextBrush = new(Color.FromRgb(0x99, 0x45, 0x3A));
     public ToastWindow()
     {
         InitializeComponent();
@@ -41,7 +48,6 @@ public partial class ToastWindow : Window
             toast.BatteryPanel.IsVisible = false;
             toast.DisconnectPanel.IsVisible = true;
             toast.DisconnectTitle.Text = deviceName;
-            durationMs = 3000;
         }
         else
         {
@@ -63,11 +69,12 @@ public partial class ToastWindow : Window
             var overlay = type == ToastType.LowBattery ? toast.LowBatteryOverlay : toast.CriticalBatteryOverlay;
             await ShowAndClose(toast, async () =>
             {
-                // 遮罩不透明显示 2 秒
-                await Task.Delay(2000);
+                // 低电提示先显示遮罩，再过渡到电量面板；总显示时间仍遵守用户设置
+                var holdMs = Math.Min(2000, Math.Max(800, durationMs - 1500));
+                await Task.Delay(holdMs);
                 // 渐变过渡到电量显示（XAML 中 DoubleTransition Opacity 0.5s cubic-ease）
                 overlay.Opacity = 0;
-                await Task.Delay(1500);
+                await Task.Delay(Math.Max(500, durationMs - holdMs));
             });
         }
         else
@@ -82,14 +89,14 @@ public partial class ToastWindow : Window
     private void PlayEnter()
     {
         Opacity = 1;
-        Card.RenderTransform = TransformOperations.Parse("translateX(0px)");
+        Card.RenderTransform = EnterTransform;
     }
 
     /// <summary>播放消失动画：滑出(0->28) + 淡出(1->0)，等过渡结束再关。</summary>
     private async Task PlayExitAndCloseAsync()
     {
         Opacity = 0;
-        Card.RenderTransform = TransformOperations.Parse("translateX(28px)");
+        Card.RenderTransform = ExitTransform;
         await Task.Delay(400);
         Close();
     }
@@ -165,10 +172,10 @@ public partial class ToastWindow : Window
 
         if (isLight)
         {
-            toast.Card.Background = new SolidColorBrush(Color.FromRgb(0xF5, 0xF5, 0xF5));
-            toast.Card.BorderBrush = new SolidColorBrush(Color.FromArgb(0x15, 0x00, 0x00, 0x00));
-            var fg = new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x22));
-            var fgMuted = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
+            toast.Card.Background = LightCardBrush;
+            toast.Card.BorderBrush = LightBorderBrush;
+            var fg = LightTextBrush;
+            var fgMuted = LightMutedTextBrush;
             toast.TitleBlock.Foreground = fg;
             toast.LeftPct.Foreground = fg; toast.LeftLabel.Foreground = fgMuted;
             toast.RightPct.Foreground = fg; toast.RightLabel.Foreground = fgMuted;
@@ -178,13 +185,12 @@ public partial class ToastWindow : Window
             toast.DisconnectTitle.Foreground = fg;
 
             // 遮罩背景：浅色模式用浅灰
-            var overlayBg = new SolidColorBrush(Color.FromRgb(0xF5, 0xF5, 0xF5));
-            toast.LowBatteryOverlay.Background = overlayBg;
-            toast.CriticalBatteryOverlay.Background = overlayBg;
+            toast.LowBatteryOverlay.Background = LightCardBrush;
+            toast.CriticalBatteryOverlay.Background = LightCardBrush;
 
             // 遮罩提示文字：浅色模式用深色
             toast.LowHintText.Foreground = fgMuted;
-            toast.CritHintText.Foreground = new SolidColorBrush(Color.FromRgb(0x99, 0x45, 0x3A));
+            toast.CritHintText.Foreground = LightCriticalTextBrush;
         }
     }
 }

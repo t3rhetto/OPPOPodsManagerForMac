@@ -7,7 +7,7 @@
    WindowStartupLocation="Manual"
    CanMinimize="False" CanMaximize="False" CanPin="False" CanFullScreen="False"
    ShowInTaskbar="False"
-   BackgroundStyle="Bubble">
+   BackgroundStyle="Flat">
 
  <suki:SukiWindow.Styles>
  <Style Selector="suki|SukiWindow /template/ Button#PART_CloseButton:pointerover">

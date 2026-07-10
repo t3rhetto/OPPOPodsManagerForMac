@@ -17,12 +17,22 @@ internal static class ToastManager
     private const double MarginBottom = 0;   // 距工作区底边（DIP）
     private const double Gap = 4;             // Toast 之间的间隔（DIP，两窗各有 16px 阴影留白，实际间距约 36px）
 
+    private const int MaxActiveToasts = 2;
     private static readonly List<ToastWindow> _active = new();
 
     /// <summary>注册一个已完成布局的 Toast（新的排在最下，旧的上移）。</summary>
     public static void Register(ToastWindow toast)
     {
-        if (!_active.Contains(toast)) _active.Add(toast);
+        if (!_active.Contains(toast))
+            _active.Add(toast);
+
+        while (_active.Count > MaxActiveToasts)
+        {
+            var old = _active[0];
+            _active.RemoveAt(0);
+            old.Close();
+        }
+
         Reposition();
     }
 

@@ -23,6 +23,11 @@ public partial class SmallWindow : SukiWindow
     private static readonly SolidColorBrush BrushAccent = new(Color.FromRgb(0x60, 0x90, 0xFF));
     private static readonly SolidColorBrush BrushWhite  = new(Colors.White);
 
+    private readonly SolidColorBrush _cardBgBrush = new(Colors.Transparent);
+    private readonly SolidColorBrush _cardBorderBrush = new(Colors.Transparent);
+    private readonly SolidColorBrush _ancInactiveBgBrush = new(Color.FromArgb(0x10, 0x00, 0x00, 0x00));
+    private readonly SolidColorBrush _ancSubInactiveBgBrush = new(Color.FromArgb(0x0C, 0x00, 0x00, 0x00));
+
     // 电量图标 path（从 OPPO 官方 App 提取，复合路径）
     private const string IconLeftData   = "M6,12C9.314,12 12,9.314 12,6C12,2.686 9.314,0 6,0C2.686,0 0,2.686 0,6C0,9.314 2.686,12 6,12Z";
     private const string IconLData       = "M3.963,9.543H8.604V8.337H5.458V2.461H3.963V9.543Z";
@@ -39,6 +44,9 @@ public partial class SmallWindow : SukiWindow
     private List<AncOption> _ancOptions = new();
     private string _ancMain = "", _ancLevel = "";
     private string? _ancBuiltForModel;
+    private string _ancSubSignature = "";
+    private bool _refreshPending;
+    private bool _isClosed;
     private DateTime _ancUserSetAt = DateTime.MinValue;
 
     public SmallWindow(IPodManager pods, Action? onDeactivated = null)
@@ -49,7 +57,11 @@ public partial class SmallWindow : SukiWindow
 
         _pods.StateChanged += OnStateChanged;
         // 窗口关闭时取消订阅，避免对已关闭窗口的控件操作 + 释放引用
-        Closed += (_, _) => _pods.StateChanged -= OnStateChanged;
+        Closed += (_, _) =>
+        {
+            _isClosed = true;
+            _pods.StateChanged -= OnStateChanged;
+        };
         Deactivated += (_, _) =>
         {
             try { _onDeactivated?.Invoke(); }
@@ -67,7 +79,7 @@ public partial class SmallWindow : SukiWindow
         // 加载官方充电盒产品图
         try
         {
-            var bmp = AssetHelper.LoadBitmap("avares://OppoPodsManager/Assets/official_case.png");
+            var bmp = AssetHelper.LoadSharedBitmap("avares://OppoPodsManager/Assets/official_case.png");
             if (bmp != null) BatteryImage.Source = bmp;
         }
         catch { }
@@ -79,29 +91,44 @@ public partial class SmallWindow : SukiWindow
     private void ApplyTheme()
     {
         var theme = SukiTheme.GetInstance();
-        var isLight = theme.ActiveBaseTheme == Avalonia.Styling.ThemeVariant.Light;
+        var activeTheme = theme.ActiveBaseTheme == Avalonia.Styling.ThemeVariant.Default
+            ? Application.Current?.ActualThemeVariant
+            : theme.ActiveBaseTheme;
+        var isLight = activeTheme == Avalonia.Styling.ThemeVariant.Light;
 
         if (isLight)
         {
-            var cardBg = new SolidColorBrush(Color.FromRgb(0xF5, 0xF5, 0xF5));
-            BatteryCard.Background = cardBg;
-            AncCard.Background = cardBg;
-            var cardBorder = new SolidColorBrush(Color.FromArgb(0x15, 0x00, 0x00, 0x00));
-            BatteryCard.BorderBrush = cardBorder;
-            AncCard.BorderBrush = cardBorder;
+            _cardBgBrush.Color = Color.FromRgb(0xF5, 0xF5, 0xF5);
+            _cardBorderBrush.Color = Color.FromArgb(0x15, 0x00, 0x00, 0x00);
+            BatteryCard.BorderBrush = _cardBorderBrush;
+            AncCard.BorderBrush = _cardBorderBrush;
         }
         else
         {
-            var cardBg = new SolidColorBrush(Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF));
-            BatteryCard.Background = cardBg;
-            AncCard.Background = cardBg;
+            _cardBgBrush.Color = Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF);
             BatteryCard.BorderBrush = null;
             AncCard.BorderBrush = null;
         }
+
+        BatteryCard.Background = _cardBgBrush;
+        AncCard.Background = _cardBgBrush;
     }
 
     public void SafeRefresh()
-        => Dispatcher.UIThread.Post(() => RefreshUi(_pods.State, _pods.Caps));
+    {
+        if (_isClosed || _refreshPending)
+            return;
+
+        _refreshPending = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _refreshPending = false;
+            if (_isClosed)
+                return;
+
+            RefreshUi(_pods.State, _pods.Caps);
+        });
+    }
 
     private void OnStateChanged() => SafeRefresh();
 
@@ -151,6 +178,7 @@ public partial class SmallWindow : SukiWindow
         AncSubRow.Children.Clear();
         AncSubRow.ColumnDefinitions.Clear();
         _ancSubButtons.Clear();
+        _ancSubSignature = "";
         AncSubRow.IsVisible = false;
 
         int col = 0;
@@ -170,9 +198,18 @@ public partial class SmallWindow : SukiWindow
 
     private void PopulateAncSub(AncOption container)
     {
+        var signature = container.Key + ":" + string.Join("|", container.Children.Select(c => $"{c.Key};{c.Label}"));
+        if (_ancSubSignature == signature)
+            return;
+
+        foreach (var (_, (btn, _)) in _ancSubButtons)
+            btn.Click -= AncSub_Click;
+
         AncSubRow.Children.Clear();
         AncSubRow.ColumnDefinitions.Clear();
         _ancSubButtons.Clear();
+        _ancSubSignature = signature;
+
         int col = 0;
         for (int i = 0; i < container.Children.Count; i++)
         {
@@ -193,12 +230,12 @@ public partial class SmallWindow : SukiWindow
             {
                 Content = child.Label, Tag = child, Width = 60, Height = 26,
                 BorderThickness = new Thickness(0), Padding = new Thickness(0),
-                Background = new SolidColorBrush(Colors.Transparent), Focusable = false,
+                Background = Brushes.Transparent, Focusable = false,
                 Foreground = BrushGray, FontSize = 11
             };
             btn.Click += AncSub_Click;
             var bg = new Border { CornerRadius = corner, Padding = new Thickness(0),
-                Background = new SolidColorBrush(Colors.Transparent), Child = btn };
+                Background = Brushes.Transparent, Child = btn };
             AncSubRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
             Grid.SetColumn(bg, col);
             AncSubRow.Children.Add(bg);
@@ -211,7 +248,7 @@ public partial class SmallWindow : SukiWindow
         AncOption opt, int circleSize, int iconSize, int fontSize)
     {
         var bg = new Ellipse { Width = circleSize, Height = circleSize,
-            Fill = new SolidColorBrush(Colors.Transparent) };
+            Fill = Brushes.Transparent };
         var icon = new Path
         {
             Data = StreamGeometry.Parse(AncIcons.GetAncIcon(opt.Key)),
@@ -221,7 +258,7 @@ public partial class SmallWindow : SukiWindow
         var clickArea = new Ellipse
         {
             Width = circleSize, Height = circleSize,
-            Fill = new SolidColorBrush(Colors.Transparent),
+            Fill = Brushes.Transparent,
             Tag = opt, Cursor = new Cursor(StandardCursorType.Hand)
         };
         clickArea.PointerPressed += (s, _) =>
@@ -253,18 +290,16 @@ public partial class SmallWindow : SukiWindow
 
     private void HighlightAnc()
     {
-        var inactiveBg = new SolidColorBrush(Color.FromArgb(0x10, 0x00, 0x00, 0x00));
-        var subInactiveBg = new SolidColorBrush(Color.FromArgb(0x0C, 0x00, 0x00, 0x00));
         foreach (var (key, (bg, icon, label)) in _ancMainButtons)
         {
             var active = key == _ancMain;
-            bg.Fill   = active ? BrushAccent : inactiveBg;
+            bg.Fill   = active ? BrushAccent : _ancInactiveBgBrush;
             icon.Fill = active ? BrushWhite : BrushGray;
         }
         foreach (var (key, (btn, bg)) in _ancSubButtons)
         {
             var active = key == _ancLevel;
-            bg.Background = active ? BrushAccent : subInactiveBg;
+            bg.Background = active ? BrushAccent : _ancSubInactiveBgBrush;
             btn.Foreground = active ? BrushWhite : BrushGray;
         }
     }
