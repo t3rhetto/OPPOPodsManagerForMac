@@ -8,13 +8,13 @@ APP_DIR="${BUILD_DIR}/${APP_NAME}.app"
 echo "=== Building ${APP_NAME} for macOS ARM64 ==="
 
 # Step 1: Publish self-contained
-echo "[1/3] Publishing self-contained build..."
+echo "[1/4] Publishing self-contained build..."
 dotnet publish -c Release -r osx-arm64 \
   --self-contained true \
   -o "${BUILD_DIR}"
 
 # Step 2: Create .app bundle structure
-echo "[2/3] Creating .app bundle..."
+echo "[2/4] Creating .app bundle..."
 rm -rf "${APP_DIR}"
 mkdir -p "${APP_DIR}/Contents/MacOS"
 mkdir -p "${APP_DIR}/Contents/Resources"
@@ -23,7 +23,7 @@ mkdir -p "${APP_DIR}/Contents/Resources"
 cp -R "${BUILD_DIR}"/* "${APP_DIR}/Contents/MacOS/"
 
 # Step 3: Create Info.plist
-echo "[3/3] Creating Info.plist..."
+echo "[3/4] Creating Info.plist..."
 cat > "${APP_DIR}/Contents/Info.plist" << 'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -36,9 +36,9 @@ cat > "${APP_DIR}/Contents/Info.plist" << 'PLIST'
     <key>CFBundleIdentifier</key>
     <string>com.oppo.podsmanager</string>
     <key>CFBundleVersion</key>
-    <string>1.1.5</string>
+    <string>2.0.0</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.1.5</string>
+    <string>2.0.0-macos</string>
     <key>CFBundleExecutable</key>
     <string>OppoPodsManager</string>
     <key>CFBundlePackageType</key>
@@ -58,6 +58,10 @@ cat > "${APP_DIR}/Contents/Info.plist" << 'PLIST'
 </dict>
 </plist>
 PLIST
+
+# Step 4: Ad-hoc sign
+echo "[4/4] Ad-hoc signing..."
+codesign --force --deep --sign - "${APP_DIR}"
 
 echo ""
 echo "=== Build complete! ==="
