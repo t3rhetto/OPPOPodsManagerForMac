@@ -2,19 +2,15 @@
 set -e
 
 APP_NAME="OppoPodsManager"
-BUNDLE_ID="com.oppo.podsmanager"
-VERSION="1.1.5"
 BUILD_DIR="bin/Release/net10.0/osx-arm64/publish"
 APP_DIR="${BUILD_DIR}/${APP_NAME}.app"
 
-echo "=== Building ${APP_NAME} for macOS ==="
+echo "=== Building ${APP_NAME} for macOS ARM64 ==="
 
 # Step 1: Publish self-contained
 echo "[1/3] Publishing self-contained build..."
 dotnet publish -c Release -r osx-arm64 \
   --self-contained true \
-  -p:PublishSingleFile=false \
-  -p:PublishTrimmed=false \
   -o "${BUILD_DIR}"
 
 # Step 2: Create .app bundle structure
@@ -23,17 +19,8 @@ rm -rf "${APP_DIR}"
 mkdir -p "${APP_DIR}/Contents/MacOS"
 mkdir -p "${APP_DIR}/Contents/Resources"
 
-# Copy executable and dependencies
-cp "${BUILD_DIR}/${APP_NAME}" "${APP_DIR}/Contents/MacOS/"
-cp "${BUILD_DIR}"/*.dylib "${APP_DIR}/Contents/MacOS/" 2>/dev/null || true
-
-# Copy icon (convert ico to icns if needed, or use png)
-if [ -f "Assets/tuopan.icns" ]; then
-  cp "Assets/tuopan.icns" "${APP_DIR}/Contents/Resources/"
-elif [ -f "Assets/tuopan.ico" ]; then
-  # For now, just copy the ico - macOS can sometimes use it
-  cp "Assets/tuopan.ico" "${APP_DIR}/Contents/Resources/"
-fi
+# Copy ALL files from publish directory
+cp -R "${BUILD_DIR}"/* "${APP_DIR}/Contents/MacOS/"
 
 # Step 3: Create Info.plist
 echo "[3/3] Creating Info.plist..."
@@ -75,9 +62,3 @@ PLIST
 echo ""
 echo "=== Build complete! ==="
 echo "App bundle: ${APP_DIR}"
-echo ""
-echo "To run:"
-echo "  open \"${APP_DIR}\""
-echo ""
-echo "To move to Applications:"
-echo "  cp -R \"${APP_DIR}\" /Applications/"

@@ -13,14 +13,8 @@ rm -rf "${APP_DIR}"
 mkdir -p "${APP_DIR}/Contents/MacOS"
 mkdir -p "${APP_DIR}/Contents/Resources"
 
-# Copy executable and dependencies
-cp "${BUILD_DIR}/${APP_NAME}" "${APP_DIR}/Contents/MacOS/"
-cp "${BUILD_DIR}"/*.dylib "${APP_DIR}/Contents/MacOS/" 2>/dev/null || true
-
-# Copy icon
-if [ -f "Assets/tuopan.ico" ]; then
-  cp "Assets/tuopan.ico" "${APP_DIR}/Contents/Resources/"
-fi
+# Copy ALL files from publish directory
+cp -R "${BUILD_DIR}"/* "${APP_DIR}/Contents/MacOS/"
 
 # Create Info.plist
 cat > "${APP_DIR}/Contents/Info.plist" << 'PLIST'
