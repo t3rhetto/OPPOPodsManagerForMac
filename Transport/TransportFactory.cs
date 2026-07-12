@@ -65,7 +65,9 @@ public static class TransportFactory
 				() => new LinuxRfcommStreamTransport(new FixedDeviceLocator(targetAddr, name)),
 				() => new LinuxGattTransport(new FixedDeviceLocator(targetAddr, name)));
 		}
+#endif
 
+#if MACOS
 		if (OperatingSystem.IsMacOS())
 		{
 			// macOS: RFCOMM (AF_BLUETOOTH socket) 实现
@@ -78,9 +80,9 @@ public static class TransportFactory
 			return new FallbackTransport(
 				() => new MacRfcommStreamTransport(new FixedDeviceLocator(targetAddr, name)));
 		}
+#endif
 
 		Log.D("FACTORY", "Create: 当前平台无传输实现,抛出 PlatformNotSupportedException");
-#endif
 		throw new PlatformNotSupportedException(
 			"当前平台暂无硬件传输实现。请为该平台实现 IPodTransport（如 macOS IOBluetooth），并在 TransportFactory 中按平台分支返回。");
     }
