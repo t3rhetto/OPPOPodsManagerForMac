@@ -66,6 +66,19 @@ public static class TransportFactory
 				() => new LinuxGattTransport(new FixedDeviceLocator(targetAddr, name)));
 		}
 
+		if (OperatingSystem.IsMacOS())
+		{
+			// macOS: RFCOMM (AF_BLUETOOTH socket) 实现
+			Log.D("FACTORY", $"Create: macOS 平台 -> RFCOMM (目标={(targetAddr == 0 ? "任意" : targetAddr.ToString("X12"))})");
+			if (targetAddr == 0)
+			{
+				return new FallbackTransport(
+					() => new MacRfcommStreamTransport());
+			}
+			return new FallbackTransport(
+				() => new MacRfcommStreamTransport(new FixedDeviceLocator(targetAddr, name)));
+		}
+
 		Log.D("FACTORY", "Create: 当前平台无传输实现,抛出 PlatformNotSupportedException");
 #endif
 		throw new PlatformNotSupportedException(
