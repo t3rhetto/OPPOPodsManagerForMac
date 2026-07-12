@@ -74,7 +74,10 @@ public partial class SmallWindow : SukiWindow
         IconLeftLetter.Data  = StreamGeometry.Parse(IconLData);
         IconRightCircle.Data = StreamGeometry.Parse(IconRightData);
         IconRightLetter.Data = StreamGeometry.Parse(IconRData);
-        IconCharge.Data = StreamGeometry.Parse(IconChargeData);
+        var chargeGeo = StreamGeometry.Parse(IconChargeData);
+        LeftChargeBolt.Data = chargeGeo;
+        RightChargeBolt.Data = chargeGeo;
+        CaseChargeBolt.Data = chargeGeo;
 
         // 加载官方充电盒产品图
         try
@@ -137,13 +140,11 @@ public partial class SmallWindow : SukiWindow
         // 标题栏显示设备名
         Title = s.Connected && caps.IsSupported ? caps.ModelName : "OPPO Pods";
 
-        // 电量
-        SetBatLabel(LeftLabel, s.Battery.GetValueOrDefault("L"));
-        SetBatLabel(RightLabel, s.Battery.GetValueOrDefault("R"));
-        SetBatLabel(CaseLabel, s.Battery.GetValueOrDefault("C"));
-        // 充电指示
-        var anyCharging = s.Battery.Values.Any(v => v?.Charging == true);
-        ChargeIndicator.IsVisible = anyCharging;
+        // 电量：未连接时不显示 -% 占位，避免断开后小 UI 继续像有设备一样占位
+        var showBattery = s.Connected && s.Battery.Count > 0;
+        SetBatLabel(LeftLabel, LeftChargeBolt, showBattery ? s.Battery.GetValueOrDefault("L") : null, showBattery);
+        SetBatLabel(RightLabel, RightChargeBolt, showBattery ? s.Battery.GetValueOrDefault("R") : null, showBattery);
+        SetBatLabel(CaseLabel, CaseChargeBolt, showBattery ? s.Battery.GetValueOrDefault("C") : null, showBattery);
 
         // ANC（使用通用 Syncer 映射设备回读的 modeKey → UI 选中态）
         if (s.AncMode is not "?" && (DateTime.Now - _ancUserSetAt).TotalMilliseconds > 3)
@@ -157,10 +158,17 @@ public partial class SmallWindow : SukiWindow
     }
 
     // ===== 电量标签 =====
-    private static void SetBatLabel(TextBlock label, (int Level, bool Charging)? bat)
+    private static void SetBatLabel(TextBlock label, Control chargeBolt, (int Level, bool Charging)? bat, bool showPlaceholder = true)
     {
-        if (bat is not { } b) { label.Text = "-%"; return; }
+        if (bat is not { } b)
+        {
+            label.Text = showPlaceholder ? "-%" : "";
+            chargeBolt.IsVisible = false;
+            return;
+        }
+
         label.Text = $"{b.Level}%";
+        chargeBolt.IsVisible = b.Charging;
     }
 
     // ===== ANC =====

@@ -93,6 +93,9 @@ public interface IPodManager : IDisposable
     /// <summary>双设备/多设备连接总开关（feature 0x11）。</summary>
     void SendDualDevice(bool on);
 
+    /// <summary>查找耳机。start=true 开始响铃，false 停止响铃。UI 读 Caps.HasFindDevice 决定是否显示。</summary>
+    void SendFindDevice(bool start);
+
     // ==================== 主动查询 ====================
 
     /// <summary>主动查询电量（结果经 StateChanged 通知，读 State.Battery）。通常由 PollAsync 自动回读。</summary>

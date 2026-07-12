@@ -54,8 +54,8 @@ public partial class ToastWindow : Window
             toast.TitleBlock.Text = deviceName;
             if (state != null)
             {
-                SetBat(toast.LeftPct, toast.LeftBolt, TryGet(state.Battery, "L"));
-                SetBat(toast.RightPct, toast.RightBolt, TryGet(state.Battery, "R"));
+                SetBat(toast.LeftPct, toast.LeftBolt, MergeCharge(TryGet(state.Battery, "L"), state.WearingL));
+                SetBat(toast.RightPct, toast.RightBolt, MergeCharge(TryGet(state.Battery, "R"), state.WearingR));
                 SetBat(toast.CasePct, toast.CaseBolt, TryGet(state.Battery, "C"));
             }
             if (type == ToastType.LowBattery)
@@ -163,6 +163,9 @@ public partial class ToastWindow : Window
 
     private static (int, bool)? TryGet(System.Collections.Concurrent.ConcurrentDictionary<string, (int, bool)?> dict, string key) =>
         dict.TryGetValue(key, out var v) ? v : null;
+
+    private static (int Lvl, bool Chg)? MergeCharge((int Lvl, bool Chg)? bat, string wear) =>
+        bat is { } b ? (b.Lvl, b.Chg || wear == "入盒") : null;
 
     /// <summary>让 Toast 跟随 App 深浅主题。</summary>
     private static void ApplyTheme(ToastWindow toast)

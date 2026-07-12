@@ -126,6 +126,9 @@ public partial class PodManager : IPodManager
             _deviceCaps.Add(OppoProtocol.CmdMultiConnectResp);
             _deviceCaps.Add(OppoProtocol.CmdOperateHandheld);
         }
+        // 查找耳机：只对 JSON 标记 findDevice 的型号开放；新协议走 setFindMode(0x0400)
+        if (Caps.HasFindDevice)
+            _deviceCaps.Add(OppoProtocol.CmdSetFindMode);
         // 多连接优先级/自动切换（MultiDevicesConnect>=2 才支持优先设备管理 + 0x0132 查询）
         if (Caps.HasMultiConnectManage)
         {
@@ -437,6 +440,12 @@ public partial class PodManager : IPodManager
     {
         Log.D("RFCOMM", $"SendDualDevice on={on}");
         SendFeatureSwitch(OppoProtocol.FeatureDualDevice, on, "双设备连接");
+    }
+
+    public void SendFindDevice(bool start)
+    {
+        Log.D("RFCOMM", $"SendFindDevice start={start}");
+        SendSet(OppoProtocol.CmdSetFindMode, OppoProtocol.FindDevicePayload(start), start ? "查找耳机" : "停止查找耳机");
     }
 
     public void SendGameMode(bool on, bool compatible = false)

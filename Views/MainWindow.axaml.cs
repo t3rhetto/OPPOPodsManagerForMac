@@ -80,6 +80,7 @@ public partial class MainWindow : SukiWindow
     private IImage? _backgroundImageSource;
     private string _backgroundCacheKey = "";
     private bool _realClose;
+    private bool _runtimeUiDisposed;
     private bool _initializingSettings;
     private string? _bgSelected; // 当前选中的背景: "default" | filepath
     private readonly List<string> _bgHistory = new(); // 历史背景图片路径
@@ -89,7 +90,10 @@ public partial class MainWindow : SukiWindow
     private readonly Dictionary<NativeMenuItem, (string key, string parentKey, bool isChild)> _trayAncMap = new();
     internal static ISukiToastManager ToastManager = new SukiToastManager();
     private string? _modelOverride;
+    private string? _cachedModelName; // 缓存连接成功后的型号名，避免传输层 DeviceName 波动导致状态栏闪烁
+    private DateTime _connectionStatusStartedAt = DateTime.MinValue;
     private bool _gameModeCompat;
+    private bool _findDeviceActive;
     private bool _wasConnected;
     private bool _lowBatteryAlerted;
     private bool _criticalBatteryAlerted;
@@ -112,9 +116,15 @@ public partial class MainWindow : SukiWindow
     private readonly SolidColorBrush _glassCardBgBrush = new(Colors.White);
     private readonly SolidColorBrush _sidebarSelectedBgBrush = new(Color.FromArgb(0x0C, 0x00, 0x00, 0x00));
     private readonly SolidColorBrush _dialogOverlayBgBrush = new(Color.FromArgb(0x50, 0x00, 0x00, 0x00));
+    private readonly SolidColorBrush _textPanelButtonBgBrush = new(Color.FromArgb(0x0A, 0x00, 0x00, 0x00));
+    private readonly SolidColorBrush _textPanelButtonHoverBgBrush = new(Color.FromArgb(0x12, 0x00, 0x00, 0x00));
+    private readonly SolidColorBrush _textPanelButtonPressedBgBrush = new(Color.FromArgb(0x1C, 0x00, 0x00, 0x00));
     private readonly SolidColorBrush _windowBackgroundBrush = new(Color.FromRgb(0xE5, 0xE5, 0xEA));
     private readonly SolidColorBrush _sidebarBackgroundBrush = new(Colors.White);
     private readonly SolidColorBrush _deviceCurrentBgBrush = new(Color.FromArgb(0x12, 0x4C, 0xAF, 0x50));
+    private static readonly SolidColorBrush BrushBatteryLow = new(Color.FromRgb(0xFF, 0x55, 0x55));
+    private static readonly SolidColorBrush BrushBatteryMid = new(Color.FromRgb(0xFF, 0xB0, 0x20));
+    private static readonly SolidColorBrush BrushBatteryHigh = new(Color.FromRgb(0x4C, 0xD9, 0x64));
     // 复用画刷：状态文字、圆圈边框、圆圈背景、ANC 强调色（浅色主题）
     private readonly SolidColorBrush _brushLightGreenLight = new(Color.FromRgb(0x2E, 0x7D, 0x32));
     private readonly SolidColorBrush _brushLightGreenDark = new(Color.FromRgb(0x88, 0xCC, 0x88));
@@ -173,6 +183,7 @@ public partial class MainWindow : SukiWindow
             Log.D("UI", "MainWindow 构造开始");
         InitializeComponent();
         AdaptToPlatform();
+        AddHandler(PointerPressedEvent, CloseFloatingMenusOnBlankClick, RoutingStrategies.Tunnel, handledEventsToo: true);
         NavHome.Classes.Add("selected");
         LbLog.ItemsSource = _renderedLogEntries;
 
@@ -261,21 +272,20 @@ public partial class MainWindow : SukiWindow
         // Setup SukiUI toast host
         Hosts = [new SukiToastHost { Manager = ToastManager }];
 
-        // Load battery: official product image + icon paths
-        var caseBmp = AssetHelper.LoadSharedBitmap("avares://OppoPodsManager/Assets/official_case.png");
-        if (caseBmp != null) BatteryImage.Source = caseBmp;
+        // Load battery: three official product images + charging bolt paths
+        LeftBatteryImage.Source = AssetHelper.LoadSharedBitmap("avares://OppoPodsManager/Assets/official_left.png");
+        RightBatteryImage.Source = AssetHelper.LoadSharedBitmap("avares://OppoPodsManager/Assets/official_right.png");
+        CaseBatteryImage.Source = AssetHelper.LoadSharedBitmap("avares://OppoPodsManager/Assets/official_case.png");
 
-        // Battery icon paths (from OPPO official app, same as SmallWindow)
-        const string iconCase = "M7.976,1.523H7.992H11.039H11.055H11.056C11.394,1.523 11.58,1.523 11.739,1.532C14.304,1.666 16.444,3.377 17.212,5.716H16.795C16.795,5.716 16.795,5.716 16.795,5.716H13.267C13.165,5.279 12.772,4.954 12.303,4.954H6.665C6.197,4.954 5.804,5.279 5.701,5.716H2.208C2.208,5.716 2.208,5.716 2.208,5.716H1.819C2.587,3.377 4.727,1.666 7.292,1.532C7.451,1.523 7.637,1.523 7.976,1.523H7.976Z M16.676,6.706H17.447C17.477,6.901 17.497,7.099 17.507,7.3C17.516,7.459 17.516,7.645 17.516,7.984V8V8.015C17.516,8.354 17.516,8.54 17.507,8.7C17.344,11.815 14.855,14.304 11.739,14.467C11.58,14.476 11.394,14.476 11.055,14.476H11.039H7.992H7.976C7.637,14.476 7.451,14.476 7.292,14.467C4.176,14.304 1.687,11.815 1.524,8.7C1.516,8.54 1.516,8.354 1.516,8.016V8.015V8V7.984V7.984C1.516,7.645 1.516,7.459 1.524,7.3C1.534,7.099 1.555,6.901 1.584,6.706H2.356C2.356,6.706 2.356,6.707 2.356,6.707H5.787C5.952,7.023 6.283,7.24 6.665,7.24H12.303C12.685,7.24 13.017,7.023 13.182,6.707H16.676C16.676,6.707 16.676,6.706 16.676,6.706Z M9.501,10.287C9.922,10.287 10.263,9.946 10.263,9.525C10.263,9.104 9.922,8.763 9.501,8.763C9.081,8.763 8.74,9.104 8.74,9.525C8.74,9.946 9.081,10.287 9.501,10.287Z";
-        const string iconL = "M3.963,9.543H8.604V8.337H5.458V2.461H3.963V9.543Z";
-        const string iconR = "M3.992,2.871V11.133H5.726V8.026H6.907L8.934,11.133H11.016L8.708,7.79C9.219,7.602 9.613,7.306 9.89,6.901C10.168,6.488 10.307,6.004 10.307,5.449C10.307,4.931 10.187,4.481 9.947,4.098C9.714,3.708 9.369,3.408 8.911,3.198C8.461,2.98 7.924,2.871 7.301,2.871H3.992Z M8.472,5.449C8.472,6.282 7.969,6.698 6.964,6.698H5.726V4.199H6.964C7.969,4.199 8.472,4.616 8.472,5.449Z";
+        // Load touch control card images (same as battery)
+        DiTouchLeftImage.Source = AssetHelper.LoadSharedBitmap("avares://OppoPodsManager/Assets/official_left.png");
+        DiTouchRightImage.Source = AssetHelper.LoadSharedBitmap("avares://OppoPodsManager/Assets/official_right.png");
+
         const string iconCharge = "M0.009,7.21C-0.023,7.286 0.032,7.37 0.115,7.37H3.303V11.885C3.303,12.011 3.476,12.045 3.524,11.929L6.6,4.471C6.631,4.396 6.575,4.313 6.494,4.313H3.303V0.115C3.303,-0.01 3.132,-0.045 3.083,0.069L0.009,7.21Z";
-        IconCase.Data = StreamGeometry.Parse(iconCase);
-        IconLeftCircle.Data = StreamGeometry.Parse("M6,12C9.314,12 12,9.314 12,6C12,2.686 9.314,0 6,0C2.686,0 0,2.686 0,6C0,9.314 2.686,12 6,12Z");
-        IconLeftLetter.Data = StreamGeometry.Parse(iconL);
-        IconRightCircle.Data = StreamGeometry.Parse("M7,14C10.866,14 14,10.866 14,7C14,3.134 10.866,0 7,0C3.134,0 0,3.134 0,7C0,10.866 3.134,14 7,14Z");
-        IconRightLetter.Data = StreamGeometry.Parse(iconR);
-        IconCharge.Data = StreamGeometry.Parse(iconCharge);
+        var chargeGeo = StreamGeometry.Parse(iconCharge);
+        LeftChargeBolt.Data = chargeGeo;
+        RightChargeBolt.Data = chargeGeo;
+        CaseChargeBolt.Data = chargeGeo;
         // 先填充默认 EQ 列表
         foreach (var kv in _pods.Caps.EqPresets) CbEq.Items.Add(kv.Key);
 
@@ -472,9 +482,7 @@ public partial class MainWindow : SukiWindow
             if (s.Connected)
         {
             StatusDot.Fill = BrushGreen;
-            StatusText.Text = caps.IsSupported
-                ? $"已连接 — {caps.ModelName}"
-                : $"已连接 — {caps.ModelName}（此型号可能未完整适配）";
+            UpdateConnectionStatusText(caps);
             StatusText.Foreground = BrushLightGreen;
             BtnReconnect.IsVisible = false;
 
@@ -508,6 +516,8 @@ public partial class MainWindow : SukiWindow
             _wasConnected = false;
             _lowBatteryAlerted = false;
             _criticalBatteryAlerted = false;
+            _cachedModelName = null; // 断开后清空缓存，下次连接重新获取
+            _connectionStatusStartedAt = DateTime.MinValue;
 
             StatusDot.Fill = BrushRed;
             var err = _pods.LastError;
@@ -540,10 +550,9 @@ public partial class MainWindow : SukiWindow
 
         var batL = MergeCharge(s.Battery.GetValueOrDefault("L"), s.WearingL);
         var batR = MergeCharge(s.Battery.GetValueOrDefault("R"), s.WearingR);
-        SetBatLabel(LeftLabel, batL);
-        SetBatLabel(RightLabel, batR);
-        SetBatLabel(CaseLabel, s.Battery.GetValueOrDefault("C"));
-        ChargeIndicator.IsVisible = s.Battery.Values.Any(v => v?.Charging == true);
+        SetBatLabel(LeftLabel, LeftChargeBolt, LeftBatteryProgress, batL);
+        SetBatLabel(RightLabel, RightChargeBolt, RightBatteryProgress, batR);
+        SetBatLabel(CaseLabel, CaseChargeBolt, CaseBatteryProgress, s.Battery.GetValueOrDefault("C"));
 
         var batteryToastType = GetBatteryToastType(s);
         if (!_criticalBatteryAlerted && batteryToastType == ToastType.CriticalBattery)
@@ -559,9 +568,9 @@ public partial class MainWindow : SukiWindow
         }
 
         var parts = new List<string>();
-        if (batL is { } lb) parts.Add($"L:{lb.Lvl}%{(lb.Chg ? "(充)" : "")}");
-        if (batR is { } rb) parts.Add($"R:{rb.Lvl}%{(rb.Chg ? "(充)" : "")}");
-        if (s.Battery.GetValueOrDefault("C") is { } cb) parts.Add($"C:{cb.Level}%{(cb.Charging ? "(充)" : "")}");
+        if (batL is { } lb) parts.Add($"L:{lb.Lvl}%{(lb.Chg ? "⚡" : "")}");
+        if (batR is { } rb) parts.Add($"R:{rb.Lvl}%{(rb.Chg ? "⚡" : "")}");
+        if (s.Battery.GetValueOrDefault("C") is { } cb) parts.Add($"C:{cb.Level}%{(cb.Charging ? "⚡" : "")}");
         UpdateTrayTooltip(parts.Count > 0 ? $"{caps.ModelName}\n{string.Join(" ", parts)}" : caps.ModelName);
 
         // 佩戴状态 - 即使空也显示占位，排查显示问题
@@ -574,6 +583,7 @@ public partial class MainWindow : SukiWindow
         // 查找设备：两只耳机均未佩戴时才可用
         var anyWearing = s.WearingL == "已佩戴" || s.WearingR == "已佩戴"
                       || s.WearingL == "佩戴"   || s.WearingR == "佩戴";
+        BtnFindDevice.IsVisible = caps.HasFindDevice;
         BtnFindDevice.IsEnabled = caps.HasFindDevice && s.Connected && !anyWearing;
 
         if (s.AncMode is not "?" && (DateTime.Now - _ancUserSetAt).TotalSeconds > 3)
@@ -631,7 +641,6 @@ public partial class MainWindow : SukiWindow
         // CbLongPower.IsVisible = caps.HasLongPowerMode;
         // CbWearDetection.IsVisible = caps.HasWearDetection;
         // CbSpineHealth.IsVisible = caps.HasSpineHealth;
-        // BtnFindDevice.IsVisible = caps.HasFindDevice;
 
         ModelNote.Text = $"当前自动识别: {caps.ModelName}";
         UpdateTitle();
@@ -648,10 +657,22 @@ public partial class MainWindow : SukiWindow
     });
     }
 
-    private static void SetBatLabel(TextBlock l, (int Lvl, bool Chg)? d)
+    private static void SetBatLabel(TextBlock label, Control chargeBolt, ProgressBar progress, (int Lvl, bool Chg)? d)
     {
-        if (d is not { } v) { l.Text = "-%"; return; }
-        l.Text = $"{v.Lvl}%{(v.Chg ? " (充)" : "")}";
+        if (d is not { } v)
+        {
+            label.Text = "-%";
+            chargeBolt.IsVisible = false;
+            progress.Value = 0;
+            progress.IsVisible = false;
+            return;
+        }
+
+        label.Text = $"{v.Lvl}%";
+        chargeBolt.IsVisible = v.Chg;
+        progress.Value = v.Lvl;
+        progress.Foreground = v.Lvl <= 20 ? BrushBatteryLow : v.Lvl <= 60 ? BrushBatteryMid : BrushBatteryHigh;
+        progress.IsVisible = true;
     }
 
     private static (int Lvl, bool Chg)? MergeCharge((int Lvl, bool Chg)? bat, string wear) =>
@@ -695,8 +716,11 @@ public partial class MainWindow : SukiWindow
     /// <summary>按当前型号 caps.AncOptions 动态生成主/子模式圆形图标按钮（型号不变则跳过重建）。</summary>
     private void BuildAncUi(DeviceCapabilities caps)
     {
-        var modelKey = caps.ModelId + "|" + caps.ModelName;
-        if (_ancBuiltForModel == modelKey && caps.AncOptions.Count > 0) return;
+        var modelKey = caps.ModelId + "|" + caps.ModelName + "|" + string.Join("|", caps.AncOptions.Select(opt =>
+            opt.Children.Count > 0
+                ? $"{opt.Key}:{opt.Label}>" + string.Join(",", opt.Children.Select(c => $"{c.Key}:{c.Label}"))
+                : $"{opt.Key}:{opt.Label}"));
+        if (_ancBuiltForModel == modelKey) return;
         _ancBuiltForModel = modelKey;
         _ancOptions = caps.AncOptions;
 
@@ -1100,6 +1124,16 @@ public partial class MainWindow : SukiWindow
         }
     }
 
+    private void BtnFindDevice_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (!_pods.IsConnected || !_pods.Caps.HasFindDevice) return;
+
+        _findDeviceActive = !_findDeviceActive;
+        Log.D("UI", $"用户操作: 查找耳机 -> {_findDeviceActive}");
+        BtnFindDevice.Content = _findDeviceActive ? "停止查找" : "查找耳机";
+        _pods.SendFindDevice(_findDeviceActive);
+    }
+
     private void CbEq_SelectionChanged(object? s, SelectionChangedEventArgs e)
     {
         if (CbEq.SelectedItem is not string name || !_pods.IsConnected) return;
@@ -1196,7 +1230,7 @@ public partial class MainWindow : SukiWindow
         // CbLongPower.IsVisible = caps.HasLongPowerMode;
         // CbWearDetection.IsVisible = caps.HasWearDetection;
         // CbSpineHealth.IsVisible = caps.HasSpineHealth;
-        // BtnFindDevice.IsVisible = caps.HasFindDevice;
+        BtnFindDevice.IsVisible = caps.HasFindDevice;
 
         ModelNote.Text = _modelOverride == null
             ? $"当前自动识别: {_pods.Caps.ModelName}"
@@ -1205,7 +1239,7 @@ public partial class MainWindow : SukiWindow
         UpdateTitle();
         if (_pods.State.Connected)
         {
-            StatusText.Text = $"已连接 — {caps.ModelName}";
+            UpdateConnectionStatusText(caps);
             StatusText.Foreground = BrushLightGreen;
             StatusDot.IsVisible = true;
             StatusText.IsVisible = true;
@@ -1299,6 +1333,17 @@ public partial class MainWindow : SukiWindow
             ? Color.FromArgb(0x50, 0x00, 0x00, 0x00)
             : Color.FromArgb(0x80, 0x00, 0x00, 0x00);
 
+        // 普通文字按钮背景板：浅色用微黑，深色用微白，保留轻量层次感。
+        _textPanelButtonBgBrush.Color = _isLightTheme
+            ? Color.FromArgb(0x14, 0x00, 0x00, 0x00)
+            : Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF);
+        _textPanelButtonHoverBgBrush.Color = _isLightTheme
+            ? Color.FromArgb(0x20, 0x00, 0x00, 0x00)
+            : Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF);
+        _textPanelButtonPressedBgBrush.Color = _isLightTheme
+            ? Color.FromArgb(0x2A, 0x00, 0x00, 0x00)
+            : Color.FromArgb(0x3A, 0xFF, 0xFF, 0xFF);
+
         // 重置对话框确认按钮颜色，避免主题切换后残留
         if (DialogConfirmBtn.IsVisible)
             DialogConfirmBtn.Background = Brushes.Transparent;
@@ -1318,6 +1363,9 @@ public partial class MainWindow : SukiWindow
         Resources["GlassCardBg"] = _glassCardBgBrush;
         Resources["SidebarSelectedBg"] = _sidebarSelectedBgBrush;
         Resources["DialogOverlayBg"] = _dialogOverlayBgBrush;
+        Resources["TextPanelButtonBg"] = _textPanelButtonBgBrush;
+        Resources["TextPanelButtonHoverBg"] = _textPanelButtonHoverBgBrush;
+        Resources["TextPanelButtonPressedBg"] = _textPanelButtonPressedBgBrush;
         _themeResourceBrushesRegistered = true;
     }
 
@@ -1362,17 +1410,70 @@ public partial class MainWindow : SukiWindow
     }
 
     /// <summary>
-    /// 获取设备显示名称：优先使用自定义名称，否则回退到设备型号名。
+    /// 获取稳定的设备型号名：连接后缓存首次探测到的有效名称，
+    /// 避免传输层 DeviceName 波动（如电脑蓝牙主机名 vs 耳机名）导致状态栏闪烁。
+    /// </summary>
+    private string GetStableModelName()
+    {
+        if (_modelOverride != null)
+            return DeviceCapabilities.ForceModel(_modelOverride).ModelName;
+
+        var caps = _pods.Caps;
+        var current = caps.ModelName;
+
+        // 只缓存“已被型号库识别/适配”的耳机型号。
+        // 这样初始预判如果拿到“xxx 的电脑”，也不会被状态栏显示或缓存。
+        if (_pods.State.Connected && caps.IsSupported && IsValidModelName(current))
+            _cachedModelName = current;
+
+        if (!string.IsNullOrEmpty(_cachedModelName))
+            return _cachedModelName;
+
+        return IsValidModelName(current) ? current : "耳机";
+    }
+
+    private static bool IsValidModelName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        if (name == "Unknown" || name == "未识别设备") return false;
+        if (name.Contains("电脑") || name.Contains("计算机") || name.Contains("Computer", StringComparison.OrdinalIgnoreCase)) return false;
+        return true;
+    }
+
+    private void UpdateConnectionStatusText(DeviceCapabilities caps)
+    {
+        if (!_pods.State.Connected)
+        {
+            _connectionStatusStartedAt = DateTime.MinValue;
+            StatusText.Text = "未连接";
+            return;
+        }
+
+        if (_connectionStatusStartedAt == DateTime.MinValue)
+            _connectionStatusStartedAt = DateTime.Now;
+
+        var model = GetStableModelName();
+        if (caps.IsSupported && model != "耳机")
+        {
+            StatusText.Text = $"已连接 — {model}";
+            return;
+        }
+
+        // 连接初期等待 productId 精确识别，避免把蓝牙主机名/电脑名显示到顶部状态栏。
+        StatusText.Text = DateTime.Now - _connectionStatusStartedAt < TimeSpan.FromSeconds(2)
+            ? "正在识别设备..."
+            : "已连接，但型号未识别";
+    }
+
+    /// <summary>
+    /// 获取设备显示名称：优先使用自定义名称，否则回退到稳定缓存的型号名。
     /// 与 UpdateTitle 保持一致的优先级逻辑。
     /// </summary>
     private string GetDeviceDisplayName()
     {
         var custom = (TbCustomName.Text ?? "").Trim();
         if (!string.IsNullOrEmpty(custom)) return custom;
-        var caps = _modelOverride != null
-            ? DeviceCapabilities.ForceModel(_modelOverride)
-            : _pods.Caps;
-        return caps.ModelName;
+        return GetStableModelName();
     }
 
     /// <summary>根据用户设置获取弹窗时长（毫秒）。默认=5000ms。</summary>
@@ -1401,9 +1502,9 @@ public partial class MainWindow : SukiWindow
         var parts = new List<string>();
         var bl = MergeCharge(s.Battery.GetValueOrDefault("L"), s.WearingL);
         var br = MergeCharge(s.Battery.GetValueOrDefault("R"), s.WearingR);
-        if (bl is { } lb) parts.Add($"L:{lb.Lvl}%{(lb.Chg ? "(充)" : "")}");
-        if (br is { } rb) parts.Add($"R:{rb.Lvl}%{(rb.Chg ? "(充)" : "")}");
-        if (s.Battery.GetValueOrDefault("C") is { } cb) parts.Add($"C:{cb.Level}%{(cb.Charging ? "(充)" : "")}");
+        if (bl is { } lb) parts.Add($"L:{lb.Lvl}%{(lb.Chg ? "⚡" : "")}");
+        if (br is { } rb) parts.Add($"R:{rb.Lvl}%{(rb.Chg ? "⚡" : "")}");
+        if (s.Battery.GetValueOrDefault("C") is { } cb) parts.Add($"C:{cb.Level}%{(cb.Charging ? "⚡" : "")}");
         UpdateTrayTooltip(parts.Count > 0 ? $"{name}\n{string.Join(" ", parts)}" : name);
     }
 
@@ -1509,7 +1610,7 @@ public partial class MainWindow : SukiWindow
         IsTitleBarVisible = true;
         CustomTitleBar.IsVisible = false;
         SidebarFullBg.IsVisible = false;
-        SidebarBorder.Background = null;
+        SidebarBorder.Background = _sidebarBackgroundBrush;
         RootGrid.Margin = default;
     }
 
@@ -1727,23 +1828,34 @@ public partial class MainWindow : SukiWindow
         }
         catch { /* 复制失败则仍用原路径 */ }
 
-        // 去重
-        _bgHistory.RemoveAll(p => p == filePath);
+        // 去重。被挤出历史的本地缓存图要同步释放缩略图缓存，避免反复添加背景导致 Bitmap 缓存越积越多。
+        foreach (var old in _bgHistory.Where(p => p == filePath).ToList())
+        {
+            _bgHistory.Remove(old);
+            RemoveBackgroundThumb(old);
+        }
+
         _bgHistory.Insert(0, filePath);
-        if (_bgHistory.Count > 10) _bgHistory.RemoveAt(_bgHistory.Count - 1);
+        while (_bgHistory.Count > 10)
+        {
+            var removed = _bgHistory[^1];
+            _bgHistory.RemoveAt(_bgHistory.Count - 1);
+            RemoveBackgroundThumb(removed);
+            TryDeleteManagedBackgroundFile(removed);
+        }
         RefreshBgThumbs();
         SettingsManager.SetStringList("BgHistory", _bgHistory);
         SelectBackground(filePath);
     }
 
-    /// <summary>重建缩略图列表（默认 + 添加 + 历史）。</summary>
+    /// <summary>重建缩略图列表（默认 + 历史），添加按钮独立放在标题行。</summary>
     private void RefreshBgThumbs()
     {
-        // 清除旧历史缩略图（保留默认和添加按钮）
+        // 清除旧历史缩略图（保留默认缩略图）
         for (int i = BgThumbList.Children.Count - 1; i >= 0; i--)
         {
             var c = BgThumbList.Children[i];
-            if ((c is Border b && (b == BgThumbDefault || b == BgThumbAdd)) || c == null)
+            if ((c is Border b && b == BgThumbDefault) || c == null)
                 continue;
             BgThumbList.Children.RemoveAt(i);
         }
@@ -1803,7 +1915,7 @@ public partial class MainWindow : SukiWindow
             wrapper.PointerEntered += (_, _) => delBtn.IsVisible = true;
             wrapper.PointerExited += (_, _) => delBtn.IsVisible = false;
 
-            BgThumbList.Children.Insert(BgThumbList.Children.Count - 0, wrapper);
+            BgThumbList.Children.Add(wrapper);
         }
         SelectBackground(_bgSelected ?? "default");
     }
@@ -1831,6 +1943,21 @@ public partial class MainWindow : SukiWindow
             bitmap.Dispose();
             _bgThumbCache.Remove(key);
         }
+    }
+
+    private static void TryDeleteManagedBackgroundFile(string path)
+    {
+        try
+        {
+            var fullPath = System.IO.Path.GetFullPath(path);
+            var bgRoot = System.IO.Path.GetFullPath(BgFolder);
+            if (fullPath.StartsWith(bgRoot + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                && System.IO.File.Exists(fullPath))
+            {
+                System.IO.File.Delete(fullPath);
+            }
+        }
+        catch { }
     }
 
     private void ClearBackgroundThumbCache()
@@ -2393,6 +2520,9 @@ public partial class MainWindow : SukiWindow
         DiEnhanceGame.IsChecked = current == AudioEnhancement.GameSound;
         DiEnhanceEq.IsChecked = current == AudioEnhancement.Eq;
         _diEnhanceSuppress = false;
+
+        // 耳机操控卡片（开发阶段强制显示）
+        // DiTouchCard.IsVisible = caps.HasKeyFunction;
     }
 
     /// <summary>固件版本 CSV → 显示格式：138.138.105。</summary>
@@ -2529,10 +2659,16 @@ public partial class MainWindow : SukiWindow
 
     private void ResetUi()
     {
-        SetBatLabel(LeftLabel, null);
-        SetBatLabel(RightLabel, null);
-        SetBatLabel(CaseLabel, null);
+        SetBatLabel(LeftLabel, LeftChargeBolt, LeftBatteryProgress, null);
+        SetBatLabel(RightLabel, RightChargeBolt, RightBatteryProgress, null);
+        SetBatLabel(CaseLabel, CaseChargeBolt, CaseBatteryProgress, null);
         WearStatus.Text = "";
+        DeviceList.Items.Clear();
+        _deviceListRows.Clear();
+        _deviceListSignature = "";
+        _findDeviceActive = false;
+        BtnFindDevice.Content = "查找耳机";
+        BtnFindDevice.IsEnabled = false;
         AncSubRow.IsVisible = false;
         CbSpatial.IsChecked = false;
         CbGame.IsChecked = false;
@@ -2578,11 +2714,21 @@ public partial class MainWindow : SukiWindow
 
     private void DisposeRuntimeUiResources()
     {
+        if (_runtimeUiDisposed)
+            return;
+        _runtimeUiDisposed = true;
+
         _eqDebounceTimer?.Stop();
         _bgApplyDebounceTimer?.Stop();
         _logRefreshTimer?.Stop();
         _logManager.Dispose();
         _trayClickTimer?.Stop();
+        if (_trayIcon != null)
+        {
+            _trayIcon.Clicked -= OnTrayClicked;
+            _trayIcon.Menu = null;
+        }
+        _trayAncMap.Clear();
         SetBackgroundImageSource(null, "");
         ClearBackgroundBitmapCache(keepKey: null);
         ClearBackgroundThumbCache();
@@ -2606,6 +2752,44 @@ public partial class MainWindow : SukiWindow
         public required TextBlock StatusText { get; init; }
     }
 
+    private void CloseFloatingMenusOnBlankClick(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.Source is not Visual source)
+            return;
+
+        if (IsInsideFloatingMenuTrigger(source))
+            return;
+
+        CloseOpenComboBoxes();
+        CloseOpenDeviceContextMenus();
+    }
+
+    private static bool IsInsideFloatingMenuTrigger(Visual source)
+    {
+        foreach (var visual in source.GetSelfAndVisualAncestors())
+        {
+            if (visual is ComboBox or ComboBoxItem or MenuItem or Avalonia.Controls.ContextMenu)
+                return true;
+        }
+
+        return false;
+    }
+
+    private void CloseOpenComboBoxes()
+    {
+        foreach (var comboBox in this.GetVisualDescendants().OfType<ComboBox>())
+            comboBox.IsDropDownOpen = false;
+    }
+
+    private void CloseOpenDeviceContextMenus()
+    {
+        foreach (var row in _deviceListRows.Values)
+        {
+            if (row.Root.ContextMenu is { } menu && menu.IsOpen)
+                menu.Close();
+        }
+    }
+
     private void RequestSyncMultiDeviceList()
     {
         if (_deviceListUpdatePending)
@@ -2621,6 +2805,25 @@ public partial class MainWindow : SukiWindow
 
     private void SyncMultiDeviceList()
     {
+        if (!_pods.State.Connected)
+        {
+            const string disconnectedSignature = "##disconnected";
+            if (_deviceListSignature == disconnectedSignature && DeviceList.Items.Count == 0)
+                return;
+
+            _deviceListSignature = disconnectedSignature;
+            foreach (var item in DeviceList.Items.OfType<Control>())
+            {
+                if (item.ContextMenu is { } menu && menu.IsOpen)
+                    menu.Close();
+                item.ContextMenu = null;
+            }
+            DeviceList.Items.Clear();
+            _deviceListRows.Clear();
+            UpdateDeviceListStatus(Array.Empty<ConnectedDeviceInfo>());
+            return;
+        }
+
         var all = _pods.State.ConnectedDevices.ToList();
         var caps = _modelOverride != null
             ? DeviceCapabilities.ForceModel(_modelOverride)
@@ -2653,7 +2856,11 @@ public partial class MainWindow : SukiWindow
         Log.D("UI", "SyncMultiDeviceList: 渲染 " + all.Count + " 个设备: " + string.Join(", ", all.Select(d => $"{d.DeviceName}/{d.Address}/{d.ConnectionState}/cur={d.IsCurrentDevice}")));
 
         foreach (var item in DeviceList.Items.OfType<Control>())
+        {
+            if (item.ContextMenu is { } menu && menu.IsOpen)
+                menu.Close();
             item.ContextMenu = null;
+        }
         DeviceList.Items.Clear();
         _deviceListRows.Clear();
 
@@ -2833,10 +3040,12 @@ public partial class MainWindow : SukiWindow
 
     private void UpdateDeviceListStatus(IReadOnlyList<ConnectedDeviceInfo> all)
     {
-        var current = all.FirstOrDefault(d => d.IsCurrentDevice);
-        StatusText.Text = current != null
-            ? $"已连接 — {current.DeviceName}"
-            : (_pods.State.Connected ? "已连接" : "未连接");
+        // 顶部状态栏表示“当前 App 已连接的耳机型号”，不要用多设备列表里的当前主机名。
+        // 多设备列表中的 current.DeviceName 可能是“xxx 的电脑/手机”，用于侧栏设备列表即可。
+        var caps = _modelOverride != null
+            ? DeviceCapabilities.ForceModel(_modelOverride)
+            : _pods.Caps;
+        UpdateConnectionStatusText(caps);
     }
 
 

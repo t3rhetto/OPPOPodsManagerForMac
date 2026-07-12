@@ -36,6 +36,8 @@
      Fill="{DynamicResource SukiText}" VerticalAlignment="Center"/>
     <TextBlock x:Name="CaseLabel" Text="-%" FontSize="11"
      Foreground="{DynamicResource SukiText}" VerticalAlignment="Center"/>
+    <Path x:Name="CaseChargeBolt" Width="9" Height="9" Stretch="Uniform"
+     Fill="#4CD964" VerticalAlignment="Center" IsVisible="False"/>
    </StackPanel>
    <StackPanel Orientation="Horizontal" Spacing="4">
     <Grid Width="12" Height="12">
@@ -46,6 +48,8 @@
     </Grid>
     <TextBlock x:Name="LeftLabel" Text="-%" FontSize="11"
      Foreground="{DynamicResource SukiText}" VerticalAlignment="Center"/>
+    <Path x:Name="LeftChargeBolt" Width="9" Height="9" Stretch="Uniform"
+     Fill="#4CD964" VerticalAlignment="Center" IsVisible="False"/>
    </StackPanel>
    <StackPanel Orientation="Horizontal" Spacing="4">
     <Grid Width="12" Height="12">
@@ -56,13 +60,9 @@
     </Grid>
     <TextBlock x:Name="RightLabel" Text="-%" FontSize="11"
      Foreground="{DynamicResource SukiText}" VerticalAlignment="Center"/>
+    <Path x:Name="RightChargeBolt" Width="9" Height="9" Stretch="Uniform"
+     Fill="#4CD964" VerticalAlignment="Center" IsVisible="False"/>
    </StackPanel>
-   </StackPanel>
-   <StackPanel x:Name="ChargeIndicator" Orientation="Horizontal"
-    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,2,4,0" Spacing="2"
-    IsVisible="False">
-   <Path x:Name="IconCharge" Width="10" Height="10" Stretch="Uniform"
-    Fill="#FFD700" VerticalAlignment="Center"/>
    </StackPanel>
   </Grid>
   </Border>

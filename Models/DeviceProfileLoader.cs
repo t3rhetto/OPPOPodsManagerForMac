@@ -90,7 +90,7 @@ public static class DeviceProfileLoader
                                   deviceName) is { } r2) return r2;
         if (MatchWithFunctionPref(e => { var nm = Normalize(EntryName(e) ?? ""); return norm.Length >= 5 && nm.Contains(norm); },
                                   deviceName) is { } r3) return r3;
-        return new DeviceCapabilities { DeviceName = deviceName, ModelName = deviceName, IsSupported = false };
+        return new DeviceCapabilities { DeviceName = deviceName, ModelName = "未识别设备", IsSupported = false };
     }
 
     private static DeviceCapabilities? MatchWithFunctionPref(Func<JsonElement, bool> predicate, string deviceName)
@@ -218,6 +218,7 @@ public static class DeviceProfileLoader
         caps.HasWearDetection      = FlagOn(func, "wearDetection");
         caps.HasAutoSwitchLink     = FlagOn(func, "autoSwitchLink");
         caps.HasFindDevice         = FlagOn(func, "findDevice");
+        caps.HasKeyFunction        = FlagOn(func, "keyFunction");
         caps.HasClickTakePic       = FlagAnyPresent(func, "clickTakePic", "clickTakePicNew");
         caps.HasZenMode            = FlagOn(func, "zenMode");
         caps.HasEarScan            = FlagOn(func, "earScan");

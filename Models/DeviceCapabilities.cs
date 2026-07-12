@@ -48,6 +48,7 @@ public class DeviceCapabilities
     public bool HasWearDetection { get; set; }
     public bool HasAutoSwitchLink { get; set; }
     public bool HasFindDevice { get; set; }
+    public bool HasKeyFunction { get; set; }
     public bool HasClickTakePic { get; set; }
     public bool HasZenMode { get; set; }
     public bool HasEarScan { get; set; }
