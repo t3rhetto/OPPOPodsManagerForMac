@@ -356,6 +356,13 @@ public partial class MainWindow : SukiWindow
         CbAcrylicBlur.IsCheckedChanged += (_, _) =>
             ToggleAcrylicBlur(CbAcrylicBlur.IsChecked == true);
 
+        // macOS 上隐藏 Windows 专属选项
+        if (OperatingSystem.IsMacOS())
+        {
+            CbAdvancedRender.IsVisible = false;
+            CbAcrylicBlur.IsVisible = false;
+        }
+
 
         // 设备型号选择
         _allModelNames = DeviceCapabilities.GetModelNames();
@@ -689,24 +696,82 @@ public partial class MainWindow : SukiWindow
         if (_initializingSettings) return;
         try
         {
-            using var runKey = Microsoft.Win32.Registry.CurrentUser
-                .OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
-            if (runKey is null) return;
-
             if (CbAuto.IsChecked == true)
             {
                 SettingsManager.SetBool("AutoStart", true);
-                var exe = Environment.ProcessPath ?? "";
-                runKey.SetValue("OPPOPods", $"\"{exe}\" --minimized");
+#if MACOS
+                EnableMacAutoStart();
+#elif WINDOWS
+                EnableWinAutoStart();
+#endif
             }
             else
             {
                 SettingsManager.SetBool("AutoStart", false);
-                try { runKey.DeleteValue("OPPOPods", throwOnMissingValue: false); } catch { }
+#if MACOS
+                DisableMacAutoStart();
+#elif WINDOWS
+                DisableWinAutoStart();
+#endif
             }
         }
         catch { }
     }
+
+#if MACOS
+    private static readonly string MacPlistPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        "Library", "LaunchAgents", "com.t3rhetto.opopodsmanager.plist");
+
+    private static void EnableMacAutoStart()
+    {
+        var exe = Environment.ProcessPath ?? "";
+        var plist = $"""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+                <key>Label</key>
+                <string>com.t3rhetto.opopodsmanager</string>
+                <key>ProgramArguments</key>
+                <array>
+                    <string>{exe}</string>
+                    <string>--minimized</string>
+                </array>
+                <key>RunAtLoad</key>
+                <true/>
+            </dict>
+            </plist>
+            """;
+        var dir = Path.GetDirectoryName(MacPlistPath)!;
+        if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+        File.WriteAllText(MacPlistPath, plist);
+    }
+
+    private static void DisableMacAutoStart()
+    {
+        if (File.Exists(MacPlistPath))
+            File.Delete(MacPlistPath);
+    }
+#endif
+
+#if WINDOWS
+    private static void EnableWinAutoStart()
+    {
+        using var runKey = Microsoft.Win32.Registry.CurrentUser
+            .OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
+        if (runKey is null) return;
+        var exe = Environment.ProcessPath ?? "";
+        runKey.SetValue("OPPOPods", $"\"{exe}\" --minimized");
+    }
+
+    private static void DisableWinAutoStart()
+    {
+        using var runKey = Microsoft.Win32.Registry.CurrentUser
+            .OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
+        try { runKey?.DeleteValue("OPPOPods", throwOnMissingValue: false); } catch { }
+    }
+#endif
     private void CbAutoUpdate_Changed(object? s, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_initializingSettings) return;
@@ -1974,19 +2039,18 @@ public partial class MainWindow : SukiWindow
 
         DialogTitle.Text = "提交反馈";
         DialogMessage.FontSize = 14;
-        DialogMessage.Text = "点击「确认」后将会把日志导出到桌面，同时打开浏览器反馈页面，请按要求填写标题、内容并上传日志文件。\n\n如果无法连接至 GitHub，可点击「GitLab」按钮前往 GitLab 进行反馈。";
+        DialogMessage.Text = "点击「确认」后将会把日志导出到桌面，同时打开浏览器反馈页面，请按要求填写标题、内容并上传日志文件。";
         DialogInput.IsVisible = false;
         DialogCancelBtn.Content = "取消";
         DialogCancelBtn.IsVisible = true;
-        DialogSkipBtn.Content = "GitLab";
-        DialogSkipBtn.IsVisible = true;
+        DialogSkipBtn.IsVisible = false;
         DialogConfirmBtn.Content = "确认";
         DialogOverlay.IsVisible = true;
 
         var ok = await _confirmTcs.Task;
         if (!ok) return;
 
-        ExportFeedback("https://github.com/Zhaoyi-ya/OppoPodsManager/issues/new");
+        ExportFeedback("https://github.com/t3rhetto/OPPOPodsManagerForMac/issues/new");
     }
 
     private void ExportFeedback(string url)
@@ -2611,13 +2675,6 @@ public partial class MainWindow : SukiWindow
 
     private void DialogSkip_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (DialogSkipBtn.Content is string label && label == "GitLab")
-        {
-            DialogOverlay_Close();
-            _confirmTcs?.TrySetResult(false);
-            ExportFeedback("https://jihulab.com/zhaoyi-ya-group/oppo-pods-manager/-/work_items/new");
-            return;
-        }
         SettingsManager.SetString("SkippedVersion", _updatePendingVersion);
         DialogOverlay_Close();
         _confirmTcs?.TrySetResult(false);
@@ -3378,9 +3435,8 @@ public partial class MainWindow : SukiWindow
 
     // ===== 版本更新检查 =====
 
-    private const string UPDATE_API = "https://oppopods.zhaoyi.fun/api/update/latest";
-    // private const string UPDATE_API = "http://localhost:57824/api/update/latest";
-    private const string DOWNLOAD_URL = "https://github.com/Zhaoyi-ya/OppoPodsManager/releases/latest";
+    private const string UPDATE_API = "https://api.github.com/repos/t3rhetto/OPPOPodsManagerForMac/releases/latest";
+    private const string DOWNLOAD_URL = "https://github.com/t3rhetto/OPPOPodsManagerForMac/releases/latest";
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(5) };
 
     private async void BtnCheckUpdate_Click(object? s, Avalonia.Interactivity.RoutedEventArgs e)
@@ -3684,18 +3740,42 @@ public partial class MainWindow : SukiWindow
     {
         try
         {
-            var resp = await _http.GetStringAsync(UPDATE_API);
-            using var doc = System.Text.Json.JsonDocument.Parse(resp);
+            using var req = new HttpRequestMessage(HttpMethod.Get, UPDATE_API);
+            req.Headers.UserAgent.ParseAdd("OPPOPodsManager");
+            var resp = await _http.SendAsync(req);
+            resp.EnsureSuccessStatusCode();
+            var body = await resp.Content.ReadAsStringAsync();
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
             var json = doc.RootElement;
-            var serverVersion = json.GetProperty("version").GetString();
-            var content = json.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "";
-            var downloadUrl = json.TryGetProperty("download_url", out var u) ? u.GetString() ?? DOWNLOAD_URL : DOWNLOAD_URL;
+
+            var serverVersion = json.GetProperty("tag_name").GetString() ?? "";
+            var content = json.TryGetProperty("body", out var c) ? c.GetString() ?? "" : "";
+
+            // 从 assets 中匹配当前架构的下载链接
+            var downloadUrl = DOWNLOAD_URL;
+            if (json.TryGetProperty("assets", out var assets) && assets.GetArrayLength() > 0)
+            {
+                var isArm64 = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture == System.Runtime.InteropServices.Architecture.Arm64;
+                var keyword = isArm64 ? "arm64" : "x64";
+                foreach (var asset in assets.EnumerateArray())
+                {
+                    var name = asset.GetProperty("name").GetString() ?? "";
+                    if (name.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                    {
+                        downloadUrl = asset.GetProperty("browser_download_url").GetString() ?? DOWNLOAD_URL;
+                        break;
+                    }
+                }
+                // 没匹配到架构就取第一个
+                if (downloadUrl == DOWNLOAD_URL)
+                    downloadUrl = assets[0].GetProperty("browser_download_url").GetString() ?? DOWNLOAD_URL;
+            }
 
             if (string.IsNullOrEmpty(serverVersion) || !IsNewerThan(serverVersion, VersionText.Text!))
             {
-            if (!silent) await Dispatcher.UIThread.InvokeAsync(async () =>
-                await ShowCheckResultDialog($"已是最新版本 ({VersionText.Text})"));
-            return;
+                if (!silent) await Dispatcher.UIThread.InvokeAsync(async () =>
+                    await ShowCheckResultDialog($"已是最新版本 ({VersionText.Text})"));
+                return;
             }
 
             // 自动检查时才跳过已跳过的版本

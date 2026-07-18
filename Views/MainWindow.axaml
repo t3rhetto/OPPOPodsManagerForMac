@@ -3,7 +3,7 @@
      xmlns:suki="https://github.com/kikipoulet/SukiUI"
      xmlns:local="using:OppoPodsManager"
      x:Class="OppoPodsManager.MainWindow"
-     Title="OPPO Pods For Windows" Height="640" Width="860"
+     Title="OPPO Pods Manager" Height="640" Width="860"
      MinWidth="890" MinHeight="640"
      WindowStartupLocation="CenterScreen"
      CanMinimize="True" CanMaximize="True" CanPin="False" CanFullScreen="False"
